@@ -46,13 +46,18 @@ Thus, the arrows that extend beyond the _System_ boundary are _States_ that defi
 
 ![Abstracted *System* that illustrates the structure of the framework. Here, *State*, *Analysis*, and *System* are emphasized to denote the use of the base classes provided within the library. Arrows extending beyond the boundary of the *System* denote quantities that are utilized for numerical optimization. \label{fig:abstractsystem}](Images/Flume_DAG_Diagram.svg){width=100%}
 
-# Statement of Need
+# Statement of need
 
 Numerical optimization is a field with a diverse range of applications, and, in engineering, is often used as a means of formulating problems in a formal, mathematical manner to identify optimal designs.
 The development of frameworks for organizing and solving these problems is a topic that has been addressed by others in the past.
 Investigations of these frameworks has exposed a set of requirements for optimization frameworks, including modularity, intuitive user interfaces, object-oriented principles, and minimal overhead [@salas1998framework, @padula2006multidisciplinary].
 These attributes, among others, are critical components to ensuring that an optimization framework is extensible to a multitude of disciplines and accessible by a variety of individuals.
-While there are many design optimization frameworks that have been developed since the late 20th century, a few are listed below to highlight the progress in this field.
+For a subset of optimization problems that possess many design variables and few constraint functions, the adjoint method becomes the most computationally efficient and scalable way to compute the required derivatives [@mdobook].
+For complicated analysis procedures, however, the assembly of total derivatives for optimization becomes challenging due to the underlying directed acyclic graph structure. This ultimately motivated the creation of _Flume_, a framework intended for numerical design optimization that eases the implementation effort associated with the adjoint method.
+
+# State of the field
+
+There are several existing design optimization frameworks that have been developed since the late 20th century. A few are listed below to highlight some of these existing solutions.
 
 - _ASTROS_: one of the first examples of an optimization framework, _ASTROS_ performs preliminary structural design using numerical optimization based on the finite-element method [@astros]
 - _DAKOTA_: developed by Sandia National Laboratories, _DAKOTA_ is a software suite written in C++ that provides methods for a variety of analyses, including gradient-based and gradient-free optimization [@dakota]
@@ -60,17 +65,33 @@ While there are many design optimization frameworks that have been developed sin
 - _pyOptSparse_: an object-oriented solution written in Python, designed for solving constrained nonlinear optimization problems with sparsity that also supports parallelism [@Wu2020pyoptsparse]
 - _OpenMDAO_: another open-source framework constructed within Python that utilizes gradient-based techniques for optimization of systems constructed with distinct components [@gray2019openmdao]
 
-As evident from this list, users are presented with many viable options to perform numerical optimization for their system of interest.
-_Flume_ provides another resource for those solving design optimization problems, but it was particularly architected to facilitate gradient-based design optimization with the adjoint method.
-For each _Analysis_ that a user wants to integrate into their model, they are responsible for providing the forward and adjoint analysis techniques that are specific to the computations they want to perform.
+As evident from this list, users are presented with several viable options to perform numerical optimization for their system of interest.
+While the adjoint method can be used with these frameworks for solving design optimization problems, _Flume_ was particularly architected to facilitate the assembly of total derivatives to perform gradient-based optimization with the adjoint method.
+Thus, for fields where the adjoint method is preferable for computing derivatives, such as topology optimization, _Flume_ provides a streamlined framework that is compatible with this approach.
+Therefore, to address this, the framework was constructed independently of these other tools to enable the construction of base classes that are tailored for the adjoint method.
+
+In context of the framework, for each _Analysis_ that a user wants to integrate into their model, they are responsible for providing the forward and adjoint analysis techniques that are specific to the computations they want to perform.
 The backend of _Flume_ will then orchestrate the assembly of total derivatives through the adjoint method by accumulating contributions from the objective function and any constraints for the system.
 Thus, each individual _Analysis_ must only consider its respective variable-output combinations, and the adjoint variables will propagate information through the model to compute the necessary total derivative information.
-This assists the user by allowing them to prioritize the development of the individual _Analysis_ objects, and the framework, paired with the proper _System_ construction, will address the data distribution for both computational directions.
-Since the core components of _Flume_ define the framework for the forward and adjoint analyses, it does not inherently perform the optimization.
+This significantly assists the user by allowing them to prioritize the development of the individual _Analysis_ objects, and the framework, paired with the proper _System_ construction, will address the data distribution for both computational directions.
+
+# Software design
+
+During the construction of this framework, several design decisions were made to prioritize accessibility and flexibility.
+All core features are written entirely within Python, and the only required package is NumPy to support array operations.
+While _Flume_ has primarily been applied for topology optimization, inheritance principles were incorporated through the creation of three base classes.
+This supports an object-oriented approach and provides users with clear guidelines about the intent of each of the base classes so that they can be applied to other fields.
+However, to avoid limiting users who want to solve other optimization problems, the requirements for each base class are minimal.
+This choice ensures that users can supplement the framework with other features that are specific to their analysis and optimization needs, rather than prescribing one acceptable approach.
+For example, C++ can be integrated with pybind11 to leverage the benefits of a compiled language for computationally-intensive analyses.
+Thus, the framework was developed with the intent of extending its application beyond topology optimization without needing to modify the fundamental features when used within a new field.
+
+Furthermore, since the core components of _Flume_ define the framework for the forward and adjoint analyses, it does not inherently perform optimization.
 However, since numerical optimization is the ultimate objective, two optimizer interfaces are currently supported with SciPy [@2020-SciPy-NMeth] and ParOpt [@Chin2019paropt].
 These interfaces provide the means of connecting a _System_ to an optimizer that will perform the numerical optimization.
+This highlights the practicality of the framework, as it contains the necessary functionality to quickly translate an analysis procedure into a design optimization problem.
 
-# Applications of _Flume_
+# Research impact statement
 
 To date, the framework has primarily been tested for two applications beyond the simpler examples provided within the repository to detail the construction of _Analysis_ disciplines and _System_ architectures.
 In a nascent stage, it was utilized to perform optimization under uncertainty for a next-generation Mars helicopter.
@@ -78,11 +99,12 @@ While the core functionality of the framework remains the same, the changes to t
 Now, _Flume_ has primarily been tested in the field of topology optimization, with specific applications for initial post-buckling behavior and inverse design problems.
 The network complexity of these systems, specifically regarding the flow of information between distinct analyses, emphasizes the importance of a tool like _Flume_.
 Both of these demonstrations were instrumental in designing the framework and ultimately has resulted in its present state, and publications on both of these topology optimization applications are in preparation for submission.
-The representative _System_ diagrams and examples of the topology optimization formulations applied to a sample domain are given for the inverse design and post-buckling problems in \autoref{fig:inverse_design} and \autoref{fig:post_buckling}, respectively.
+The representative _System_ diagrams and examples of the topology optimization formulations applied to a sample domain are given for the inverse design and post-buckling problems in \autoref{fig:inversedesign} and \autoref{fig:postbuckling}, respectively.
+A derivative of _Flume_ that is specifically targeted towards topology optimization is being constructed, and these resources will also be made publicly available upon completion to increase the accessibility of topology optimization.
 
-![Demonstration of *Flume* applied to topology optimization for inverse design with natural frequency applications. \label{fig:inverse_design}](Images/Inverse_Design_Sample.svg){width=100%}
+![Demonstration of *Flume* applied to topology optimization for inverse design with natural frequency applications. \label{fig:inversedesign}](Images/Inverse_Design_Sample.svg){width=100%}
 
-![Demonstration of *Flume* applied to topology optimization for buckling load factor maximization with considerations for initial post-buckling behavior. \label{fig:post_buckling}](Images/Post_Buckling_Sample.svg){width=100%}
+![Demonstration of *Flume* applied to topology optimization for buckling load factor maximization with considerations for initial post-buckling behavior. \label{fig:postbuckling}](Images/Post_Buckling_Sample.svg){width=100%}
 
 # _Flume_ by Example: Constrained Rosenbrock
 
@@ -248,3 +270,7 @@ x, res = interface.optimize_system(x0=x0, method="SLSQP")
 ```
 
 \normalsize
+
+# AI usage disclosure
+
+Regarding code development for _Flume_, generative AI tools, specifically ChatGPT, were minimally used to assist with interpreting Python error statements that were encountered during the framework's construction. Beyond this use case, generative AI was not utilized to write any software, sections of the manuscript, or the documentation.
