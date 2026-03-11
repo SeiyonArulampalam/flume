@@ -71,7 +71,6 @@ class ParticlePositions(Analysis):
         z = r * np.cos(theta)
 
         # Assign the outputs
-        self.analyzed = True
         self.outputs = {}
 
         self.outputs["x"] = State(
@@ -124,9 +123,6 @@ class ParticlePositions(Analysis):
         phib += xb * (r * np.sin(theta) * -np.sin(phi)) + yb * (
             r * np.sin(theta) * np.cos(phi)
         )
-
-        # Assign the derivative values
-        self.adjoint_analyzed = True
 
         self.variables["theta"].set_deriv_value(thetab)
         self.variables["phi"].set_deriv_value(phib)
@@ -216,7 +212,6 @@ class PotentialEnergy(Analysis):
                     f += dist_sq**-0.5
 
         # Assign the output value
-        self.analyzed = True
         self.outputs = {}
 
         self.outputs["f"] = State(
@@ -270,9 +265,6 @@ class PotentialEnergy(Analysis):
         xb *= fb
         yb *= fb
         zb *= fb
-
-        # Assign the derivatives
-        self.adjoint_analyzed = True
 
         self.variables["x"].set_deriv_value(deriv_val=xb)
         self.variables["y"].set_deriv_value(deriv_val=yb)
@@ -346,8 +338,6 @@ class ParticleConstraints(Analysis):
         c = x[:] ** 2 + y[:] ** 2 + z[:] ** 2 - 1
 
         # Assign the outputs
-        self.analyzed = True
-
         self.outputs = {}
 
         self.outputs["c"] = State(
@@ -379,9 +369,6 @@ class ParticleConstraints(Analysis):
         xb[:] += cb * 2 * x[:]
         yb[:] += cb * 2 * y[:]
         zb[:] += cb * 2 * z[:]
-
-        # Assign the derivatives
-        self.adjoint_analyzed = True
 
         self.variables["x"].set_deriv_value(deriv_val=xb)
         self.variables["y"].set_deriv_value(deriv_val=yb)

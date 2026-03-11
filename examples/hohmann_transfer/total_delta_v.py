@@ -54,9 +54,6 @@ class TotalDeltaV(Analysis):
         # Compute the total delta_v
         dv_tot = dv1 + dv2
 
-        # Update the attribute to reflect that the object has been analyzed
-        self.analyzed = True
-
         # Store the outputs in the output dictionary
         self.outputs = {}
 
@@ -80,9 +77,6 @@ class TotalDeltaV(Analysis):
         # Update the derivative values for the variables
         dv1b += dv_totb
         dv2b += dv_totb
-
-        # Update the attribute for the adjoint analysis
-        self.adjoint_analyzed = True
 
         # Set the derivative values
         self.variables["delta_v1"].set_deriv_value(deriv_val=dv1b)

@@ -58,9 +58,6 @@ class Independents(Analysis):
         dinc1 = self.variables["dinc1_dv"].value
         dinc2 = self.variables["dinc2_dv"].value
 
-        # Update the attribute to reflect that the object has been analyzed
-        self.analyzed = True
-
         # Store the outputs in the output dictionary
         self.outputs = {}
 
@@ -87,9 +84,6 @@ class Independents(Analysis):
         mub = self.outputs["mu"].deriv
         dinc1b = self.outputs["dinc1"].deriv
         dinc2b = self.outputs["dinc2"].deriv
-
-        # Update the attribute for the adjoint analysis
-        self.adjoint_analyzed = True
 
         # Assign the derivative values for the variables
         self.variables["r1_dv"].set_deriv_value(deriv_val=r1b)

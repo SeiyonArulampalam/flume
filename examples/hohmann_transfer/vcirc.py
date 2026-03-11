@@ -81,9 +81,6 @@ class VCircAnalysis(Analysis):
         # Compute the circular velocity for the orbit
         v_c = np.sqrt(mu / r)
 
-        # Update the attribute to reflect that the object has been analyzed
-        self.analyzed = True
-
         # Assign the outputs to the outputs dictionary
         self.outputs = {}
 
@@ -142,9 +139,6 @@ class VCircAnalysis(Analysis):
         else:
             self.variables["r"].set_deriv_value(deriv_val=rb)
             self.variables["mu"].set_deriv_value(deriv_val=mub)
-
-        # Update the attribute for the adjoint analysis
-        self.adjoint_analyzed = True
 
         return
 

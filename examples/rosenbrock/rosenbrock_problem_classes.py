@@ -57,9 +57,6 @@ class Rosenbrock(Analysis):
         # Compute the value of the Rosenbrock function
         f = (a - x) ** 2 + b * (y - x**2) ** 2
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -94,9 +91,6 @@ class Rosenbrock(Analysis):
 
         # Compute contributions to yb
         yb += (2 * b * (y - x**2)) * fb
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Assign the derivative values
         self.variables["x"].set_deriv_value(deriv_val=xb)
@@ -150,9 +144,6 @@ class RosenbrockDVs(Analysis):
         x_dv = self.variables["x_dv"].value
         y_dv = self.variables["y_dv"].value
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs in the outputs dictionary
         self.outputs = {}
 
@@ -178,9 +169,6 @@ class RosenbrockDVs(Analysis):
         # Update the derivative values
         x_dvb += xb
         y_dvb += yb
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Set the derivative values
         self.variables["x_dv"].set_deriv_value(deriv_val=x_dvb)
@@ -234,9 +222,6 @@ class RosenbrockConstraint(Analysis):
         # Compute the value of the constraint
         g = x**2 + y**2
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs in the outputs dictionary
         self.outputs = {}
 
@@ -267,9 +252,6 @@ class RosenbrockConstraint(Analysis):
         # Add the contributions to xb and yb
         xb += gb * 2 * x
         yb += gb * 2 * y
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Assign the derivative values
         self.variables["x"].set_deriv_value(deriv_val=xb)

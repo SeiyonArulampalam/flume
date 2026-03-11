@@ -51,9 +51,6 @@ class TotalInclinationChange(Analysis):
         # Compute the total delta_v
         dinc_tot = dinc1 + dinc2
 
-        # Update the attribute to reflect that the object has been analyzed
-        self.analyzed = True
-
         # Store the outputs in the output dictionary
         self.outputs = {}
 
@@ -79,9 +76,6 @@ class TotalInclinationChange(Analysis):
         # Update the derivative values for the variables
         dinc1b += dinc_totb
         dinc2b += dinc_totb
-
-        # Update the attribute for the adjoint analysis
-        self.adjoint_analyzed = True
 
         # Set the derivative values
         self.variables["dinc1"].set_deriv_value(deriv_val=dinc1b)

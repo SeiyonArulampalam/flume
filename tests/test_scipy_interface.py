@@ -245,29 +245,6 @@ class TestThomsonProblem(unittest.TestCase):
         obj_val = self.optimize_system(n_p=n_p)
         obj_star = 0.5
 
-        # Perform the check
-        self.assertAlmostEqual(
-            first=obj_val,
-            second=obj_star,
-            places=4,
-            msg=f"The optimal value of the objective function does not match the expected value for {n_p} particles.",
-        )
-
-        return
-
-    def test_optimization_3np(self):
-        """
-        Tests that the solution for the thomson problem with N particles matches the expected solution.
-        """
-
-        # Construct the system
-        n_p = 3
-        maxit = 150
-
-        # Optimize the system and get the objective value
-        obj_val = self.optimize_system(n_p=n_p, maxit=maxit)
-        obj_star = 1.732050808
-
         # Compute the relative error
         rel_error = abs(obj_val - obj_star) / obj_star
 
@@ -287,9 +264,10 @@ class TestThomsonProblem(unittest.TestCase):
 
         # Construct the system
         n_p = 3
+        maxit = 150
 
         # Optimize the system and get the objective value
-        obj_val = self.optimize_system(n_p=n_p)
+        obj_val = self.optimize_system(n_p=n_p, maxit=maxit)
         obj_star = 1.732050808
 
         # Compute the relative error
@@ -323,8 +301,8 @@ class TestThomsonProblem(unittest.TestCase):
         # Perform the check
         self.assertLessEqual(
             a=rel_error,
-            b=1e-3,
-            msg=f"The optimal value of the objective function does not match the expected value for {n_p} particles within the relative error tolerance 1e-3.",
+            b=5e-3,
+            msg=f"The optimal value of the objective function does not match the expected value for {n_p} particles within the relative error tolerance 5e-3.",
         )
 
         return

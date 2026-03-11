@@ -48,9 +48,6 @@ class Independents(Analysis):
         # Extract the variables
         h_dv = self.variables["h_dv"].value
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -73,9 +70,6 @@ class Independents(Analysis):
 
         # Update the derivatives for h_dv
         h_dvb += hb
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Assign the derivative values
         self.variables["h_dv"].set_deriv_value(h_dvb)

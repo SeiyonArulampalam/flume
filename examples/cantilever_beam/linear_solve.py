@@ -84,9 +84,6 @@ class LinearStaticSolve(Analysis):
         d = self.lu.solve(self.f)
         self.d = d
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -176,9 +173,6 @@ class LinearStaticSolve(Analysis):
 
             # Compute the contributions for the current element
             Ib[idx] += psi_e.T @ (self.Ke_by_I @ d_e)
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Assign the derivative values
         self.variables["I"].set_deriv_value(Ib)

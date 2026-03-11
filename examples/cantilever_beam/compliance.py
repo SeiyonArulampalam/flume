@@ -68,9 +68,6 @@ class Compliance(Analysis):
         # Compute the compliance
         c = np.dot(f, u)
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -92,9 +89,6 @@ class Compliance(Analysis):
 
         # Compute the contributions to db
         db[0:-2] += cb * f
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Assign the derivative values
         self.variables["d"].set_deriv_value(db)

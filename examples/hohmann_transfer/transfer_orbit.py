@@ -100,9 +100,6 @@ class TransferOrbitAnalysis(Analysis):
 
         vp = self.h / rp
 
-        # Update the attribute to reflect that the object has been analyzed
-        self.analyzed = True
-
         # Store the outputs in the output dictionary
         self.outputs = {}
 
@@ -199,9 +196,6 @@ class TransferOrbitAnalysis(Analysis):
             self.variables["ra"].set_deriv_value(deriv_val=rab)
             self.variables["rp"].set_deriv_value(deriv_val=rpb)
             self.variables["mu"].set_deriv_value(deriv_val=mub)
-
-        # Update the attribute for the adjoint analysis
-        self.adjoint_analyzed = True
 
         return
 

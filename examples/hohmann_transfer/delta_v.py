@@ -89,9 +89,6 @@ class DeltaVAnalysis(Analysis):
         # Compute the change in velocity
         delta_v = np.sqrt(v1**2 + v2**2 - 2 * v1 * v2 * np.cos(dinc))
 
-        # Update the attribute to reflect that the object has been analyzed
-        self.analyzed = True
-
         # Store the output in the output dictionary
         self.outputs = {}
 
@@ -154,9 +151,6 @@ class DeltaVAnalysis(Analysis):
             self.variables["v1"].set_deriv_value(deriv_val=v1b)
             self.variables["v2"].set_deriv_value(deriv_val=v2b)
             self.variables["dinc"].set_deriv_value(deriv_val=dincb)
-
-        # Update the attribute for the adjoint analysis
-        self.adjoint_analyzed = True
 
         return
 

@@ -59,9 +59,6 @@ class MomentofInertia(Analysis):
         # Compute the moment of inertia for each element (square cross section assumed)
         I = 1 / 12 * b * h**3
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -88,9 +85,6 @@ class MomentofInertia(Analysis):
 
         # Compute the contribution to hb from Ib
         hb += Ib * 1 / 12 * b * 3 * h**2
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Assign the derivative values
         self.variables["h"].set_deriv_value(deriv_val=hb)

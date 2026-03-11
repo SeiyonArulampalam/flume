@@ -37,9 +37,6 @@ class FirstBlock(Analysis):
         # Compute y
         y = x**2
 
-        # Update analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -55,9 +52,6 @@ class FirstBlock(Analysis):
         # Compute xb from y
         x = self.variables["x"].value
         xb += 2 * x * yb
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Update the derivative values for the varialbes
         self.variables["x"].set_deriv_value(deriv_val=xb)
@@ -89,9 +83,6 @@ class ObjTerm1(Analysis):
         # Compute f
         f = 2 * y
 
-        # Update analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -108,9 +99,6 @@ class ObjTerm1(Analysis):
 
         # Compute the contribution to yb from f
         yb += 2 * fb
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Update the derivative values for the varialbes
         self.variables["y"].set_deriv_value(deriv_val=yb)
@@ -142,9 +130,6 @@ class ObjTerm2(Analysis):
         # Compute g
         g = np.exp(y).item()
 
-        # Update analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -162,9 +147,6 @@ class ObjTerm2(Analysis):
         # Compute the contribution to yb from f
         y = self.variables["y"].value
         yb += exp(y) * gb
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Update the derivative values for the varialbes
         self.variables["y"].set_deriv_value(deriv_val=yb)
@@ -203,9 +185,6 @@ class MultiObjective(Analysis):
         # Compute the multi objective value
         J = w * f + (1 - w) * g
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -231,9 +210,6 @@ class MultiObjective(Analysis):
 
         # Compute the contribution to gb from J
         gb += Jb * (1 - w)
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Update the derivative values for the variables
         self.variables["f"].set_deriv_value(deriv_val=fb)
@@ -268,9 +244,6 @@ class Intermediate(Analysis):
         # Compute the output
         h = 3 * f
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -289,9 +262,6 @@ class Intermediate(Analysis):
         fb = self.variables["f"].deriv
 
         fb += hb * 3.0
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Update the derivative values
         self.variables["f"].set_deriv_value(fb)
@@ -325,9 +295,6 @@ class Intermediate2(Analysis):
         # Compute the output
         i = 3 * g
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -344,9 +311,6 @@ class Intermediate2(Analysis):
         gb = self.variables["g"].deriv
 
         gb += ib * 3.0
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Update the derivative values
         self.variables["g"].set_deriv_value(gb)
@@ -389,9 +353,6 @@ class Constraint(Analysis):
         # Compute the output
         c = i * h
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -417,9 +378,6 @@ class Constraint(Analysis):
         ib += cb * h
 
         hb += cb * i
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Update the derivative values
         self.variables["i"].set_deriv_value(ib)

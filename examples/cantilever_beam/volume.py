@@ -69,9 +69,6 @@ class BeamVolume(Analysis):
         # Sum the element volumes to get the total volume
         V = np.sum(Ve)
 
-        # Update the analyzed attribute
-        self.analyzed = True
-
         # Store the outputs
         self.outputs = {}
 
@@ -93,9 +90,6 @@ class BeamVolume(Analysis):
 
         # Compute the contributions to hb from Vb
         hb += Vb * b * self.Le
-
-        # Update the analyzed adjoint attribute
-        self.adjoint_analyzed = True
 
         # Assign the derivative values
         self.variables["h"].set_deriv_value(deriv_val=hb)
