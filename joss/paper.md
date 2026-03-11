@@ -45,18 +45,18 @@ Arrows that link _Analysis_ objects denote _State_ objects that connect outputs 
 _Analysis_ objects that are outlined in red and are labeled with "Top-level **_Analysis_** Object" are those that define output _States_ that are utilized for optimization.
 Thus, the arrows that extend beyond the _System_ boundary are _States_ that define design variables, the objective function, or constraint functions for an optimization problem that is wrapped within the framework.
 
-![Abstracted *System* that illustrates the structure of the framework. Here, *State*, *Analysis*, and *System* are emphasized to denote the use of the base classes provided within the library. Arrows extending beyond the boundary of the *System* denote quantities that are utilized for numerical optimization. \label{fig:abstractsystem}](Images/Flume_DAG_Diagram.svg){width=100%}
+![Abstracted *System* that illustrates the structure of the framework. Here, *State*, *Analysis*, and *System* are emphasized to denote the use of the primary classes provided within the library. Arrows extending beyond the boundary of the *System* denote quantities that are utilized for numerical optimization. \label{fig:abstractsystem}](Images/Flume_DAG_Diagram.svg){width=100%}
 
 # Statement of need
 
-Frameworks for organizing and solving engineering design optimization problems have a common set of features and requirements, including modularity, intuitive user interfaces, object-oriented principles, and minimal overhead [@salas1998framework, @padula2006multidisciplinary].
+Frameworks for organizing and solving engineering design optimization problems have a common set of features and requirements, including modularity, intuitive user interfaces, object-oriented principles, and minimal overhead [@salas1998framework; @padula2006multidisciplinary].
 For optimization problems with many design variables and few constraint functions, the adjoint method becomes the most computationally efficient and scalable way to compute the required derivatives [@mdobook].
 Several commercial software tools are available for solving engineering optimization problems, such as the _Adaptive Modeling Language suite_ [@AMLtechnosoft], _HEEDS_ [@heeds], _ISight_ [@isight], _ModelCenter_ [@modelcenter], and _modeFRONTIER_ [@modeFRONTIER], but they are not open-source.
 Some open-source frameworks, such as _MACH_ [@Kenway2014MACH] and _FUNtoFEM_ [@Jacobson2018FUNtoFEM], are successful in solving coupled aerostructural design optimization problems, but their use for this specific type of problem makes their extension to other disciplines more challenging.
 _pyOptSparse_ [@Wu2020pyoptsparse] is a more general framework for solving constrained nonlinear optimization problems.
 However, _pyOptSparse_'s object-oriented approach does not easily define a hierarchical approach for constructing analysis sequences, which introduces implementation complexity when the adjoint method is required.
 _OpenMDAO_ [@gray2019openmdao] addresses this organizational challenge by utilizing a hierarchical approach, and _MPhys_ [@Yildirim2025mphys] provides functionality to integrate simulation software within the _OpenMDAO_ framework.
-Derivative evaluation is facilitated using the modular analysis and unified derivatives (MAUD) architecture [@Hwang2018maud], but the _OpenMDAO_ framework has many requirements and base classes that create complexity if extending its functionality.
+Derivative evaluation is facilitated using the modular analysis and unified derivatives (MAUD) architecture [@Hwang2018maud], but the _OpenMDAO_ framework has many requirements and base classes that create implementation challenges if extending its functionality.
 
 While it is evident that users are presented with several viable options to perform numerical optimization, _Flume_ was created to address the challenges identified above with the existing frameworks.
 First, _Flume_ is particularly architected to facilitate the assembly of total derivatives using the adjoint method to perform gradient-based optimization.
@@ -82,7 +82,7 @@ For example, C++ can be integrated with pybind11 to leverage the benefits of a c
 This also enables the use of external tools that implement adjoint-based methods to compute derivatives for gradient-based optimization.
 
 The core components of _Flume_ enable the forward analysis and adjoint-based derivative evaluation.
-To perform optimization, two optimizer interfaces are currently supported with SciPy [@2020-SciPy-NMeth] and ParOpt [@Chin2019paropt].
+To perform optimization, two optimizer interfaces are currently supported with SciPy [@2020SciPy-NMeth] and ParOpt [@Chin2019paropt].
 These interfaces provide the means of connecting an instance of _System_ to an optimizer that will perform the numerical optimization.
 This highlights the practicality of the framework, as it contains the necessary functionality to quickly translate an analysis procedure into a design optimization problem.
 
@@ -95,7 +95,7 @@ The representative _System_ diagrams and examples of the topology optimization f
 
 <!-- A topology optimization framework built on _Flume_ has been implemented, and this will also be made publicly available upon completion to increase the accessibility of topology optimization. -->
 
-![Demonstration of *Flume* applied to topology optimization for inverse design with natural frequency applications. \label{fig:inversedesign}](Images/Inverse_Design_Sample.svg){width=100%}
+![Demonstration of *Flume* applied to topology optimization for inverse design with natural frequency applications. \label{fig:inversedesign}](Images/Inverse_Design_Sample.svg){width=90%}
 
 ![Demonstration of *Flume* applied to topology optimization for buckling load factor maximization with considerations for initial post-buckling behavior. \label{fig:postbuckling}](Images/Post_Buckling_Sample.svg){width=100%}
 
