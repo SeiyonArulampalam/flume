@@ -543,6 +543,7 @@ class Analysis:
             if not analysis.analyzed:
                 start = time.time()
                 analysis._analyze()
+                analysis.analyzed = True
                 end = time.time()
 
                 analysis_time = end - start
@@ -612,6 +613,7 @@ class Analysis:
 
             start = time.time()
             analysis._analyze_adjoint()
+            analysis.adjoint_analysed = True
             end = time.time()
 
             adjoint_time = end - start
