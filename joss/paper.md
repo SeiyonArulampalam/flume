@@ -93,7 +93,8 @@ _Flume_ has been used for topology optimization, with specific applications for 
 The network complexity of these systems, such as in \autoref{fig:inversedesign}a and in \autoref{fig:postbuckling}a, emphasizes the importance of a tool like _Flume_.
 The representative _System_ diagrams and examples of the topology optimization formulations applied to a sample domain are given for the inverse design and post-buckling problems in \autoref{fig:inversedesign} and \autoref{fig:postbuckling}, respectively.
 ![Demonstration of *Flume* applied to topology optimization for inverse design with natural frequency applications. \label{fig:inversedesign}](Images/Inverse_Design_Sample.svg){width=90%}
-![Demonstration of *Flume* applied to topology optimization for buckling load factor maximization with considerations for initial post-buckling behavior. \label{fig:postbuckling}](Images/Post_Buckling_Sample.svg){width=100%}
+
+![Demonstration of *Flume* applied to topology optimization for buckling load factor maximization with considerations for initial post-buckling behavior. \label{fig:postbuckling}](Images/Post_Buckling_Sample.svg){width=95%}
 
 # _Flume_ by Example: Constrained Rosenbrock
 
