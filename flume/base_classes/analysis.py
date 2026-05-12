@@ -441,8 +441,6 @@ class Analysis:
         ----------
         mode : str
             Either 'real' or 'complex', which then sets an attribute for dtype to be float or complex. This is needed when setting data type for numpy arrays during analysis procedures.
-
-        TODO: come back and make it so setting the mode for complex works for all analysis objects
         """
 
         if mode == "real":
@@ -452,54 +450,62 @@ class Analysis:
         else:
             raise ValueError("Analysis mode must be either 'real' or 'complex'.")
 
-    def _initialize_analysis(self, mode="real"):
+    def _initialize_analysis(self, mode: str = "real", isolated_test: bool = False):
         """
         Initializes the internal data for the analysis procedure contained within the object. Nominally, this simply sets an attribute called 'analyzed', which is a boolean that stores whether the analysis procedure has been performed. If other procedures are required for this function, the derived class should contain an instance of this method and then call super()._initialize_analysis() immediately before the return statement.
+
+        Parameters
+        ----------
+        mode : str
+            Mode which specifies whether the analysis should be performed with real or complex numbers/data types
+        isolated_test : bool
+            Defaults to False. This is only used internally for the isolated adjoint test to avoid the need to check for sub-analyses.
         """
 
         # Set the data type based on the analysis mode
         self._set_data_type(mode=mode)
 
-        # Modify the analyzed attribute for the current object, if necessary
-        if not hasattr(self, "analyzed"):
-            # If the object does not have an analyzed attribute, set it to False
-            self.analyzed = False
-
-        # If the object has any sub-analyses...
-        elif any(self.sub_analyses):
-
-            # Loop through each sub analysis and extract its analyzed attribute
-            subs_analyzed = []
-            for sub in self.sub_analyses:
-                subs_analyzed.append(sub.analyzed)
-
-            # If not all sub-analyses have been analyzed, set the current object's analyzed attribute to False (values will change from sub-analyses, so need to recompute this object)
-            if not all(subs_analyzed):
+        if not isolated_test:
+            # Modify the analyzed attribute for the current object, if necessary
+            if not hasattr(self, "analyzed"):
+                # If the object does not have an analyzed attribute, set it to False
                 self.analyzed = False
 
-            # If all sub-analyses have been analyzed and the current object is already analyzed, keep analyzed the same (as True)
-            elif all(subs_analyzed) and self.analyzed:
-                self.analyzed = True
+            # If the object has any sub-analyses...
+            elif any(self.sub_analyses):
 
-            # If all sub-analyses have been analyzed but this object is not analyzed, keep analyzed the same (as False); this object needs to be analyzed
+                # Loop through each sub analysis and extract its analyzed attribute
+                subs_analyzed = []
+                for sub in self.sub_analyses:
+                    subs_analyzed.append(sub.analyzed)
+
+                # If not all sub-analyses have been analyzed, set the current object's analyzed attribute to False (values will change from sub-analyses, so need to recompute this object)
+                if not all(subs_analyzed):
+                    self.analyzed = False
+
+                # If all sub-analyses have been analyzed and the current object is already analyzed, keep analyzed the same (as True)
+                elif all(subs_analyzed) and self.analyzed:
+                    self.analyzed = True
+
+                # If all sub-analyses have been analyzed but this object is not analyzed, keep analyzed the same (as False); this object needs to be analyzed
+                else:
+                    self.analyzed = False
+
+            # If the object does not have any sub-analyses...
+            elif not any(self.sub_analyses):
+
+                # If it has been analyzed, keep the same (as True)
+                if self.analyzed:
+                    self.analyzed = True
+                # If it has not been analyzed, keep the same (as False)
+                else:
+                    self.analyzed = False
+
+            # Raise an error if this situation occurs, as there is a logic detection issue
             else:
-                self.analyzed = False
-
-        # If the object does not have any sub-analyses...
-        elif not any(self.sub_analyses):
-
-            # If it has been analyzed, keep the same (as True)
-            if self.analyzed:
-                self.analyzed = True
-            # If it has not been analyzed, keep the same (as False)
-            else:
-                self.analyzed = False
-
-        # Raise an error if this situation occurs, as there is a logic detection issue
-        else:
-            raise RuntimeError(
-                f"Unknown logic situation encountered for object named {self.obj_name} during analysis initialization!"
-            )
+                raise RuntimeError(
+                    f"Unknown logic situation encountered for object named {self.obj_name} during analysis initialization!"
+                )
 
         return
 
@@ -984,8 +990,8 @@ class Analysis:
         # Call the set variable values method
         self.set_var_values(def_var_values)
 
-        # Initialize the analysis
-        self._initialize_analysis()
+        # Initialize the analysis (use isolated test mode to avoid check for sub-analyses)
+        self._initialize_analysis(isolated_test=True)
 
         # Check to make sure that the design variables list is not empty
         num_dvs = len(self.design_vars_list)
@@ -996,6 +1002,7 @@ class Analysis:
 
         # Analyze the system
         self._analyze()
+        self.analyzed = True
         outs0 = self.get_output_values()
 
         if debug_print:
@@ -1124,13 +1131,17 @@ class Analysis:
 
         self.set_var_values(pert_var_values)
 
-        # Compute the outputs using the perturbed values
-        self._initialize_analysis(mode=mode)
+        # Compute the outputs using the perturbed values (initialize the analysis with isolated test set to true to avoid checks for any sub-analyses)
+        self._initialize_analysis(mode=mode, isolated_test=True)
 
         self._analyze()
+        self.analyzed = True
 
         # Extract the perturbed output values
         outs = self.get_output_values()
+
+        # Reset the analyzed flag
+        self.analyzed = False
 
         if debug_print:
             print("\n PERTURBED OUTPUT VALUES:")
@@ -1215,8 +1226,6 @@ class Analysis:
         defined_vars : dictionary
             A dictionary where the keys correspond to the global variable names and the values are the numeric values that the variables should have. For example, if the user wants to set a variable 'x' for an analysis object 'analysis' to be value 1.0, defined_vars should be given as defined_vars = {'analysis.x': 1.0}.
         """
-
-        #
 
         # Perform a preliminary analysis to assemble the stack and form the connection maps
         self.analyze()
