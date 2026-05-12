@@ -346,18 +346,37 @@ class FlumeScipyInterface:
                 )
 
             # Construct a lambda function for the constraint wrapper
-            con_func = lambda x: self._constraint_wrapper(x, con_i_info)
+            con_func = lambda x, _info=con_i_info: self._constraint_wrapper(x, _info)
 
             # Construct a lambda function for the constraint Jacobian wrapper
-            con_jac_func = lambda x: self._constraint_jac_wrapper(x, con_i_info)
+            con_jac_func = lambda x, _info=con_i_info: self._constraint_jac_wrapper(
+                x, _info
+            )
 
             # Add the constraint
             if dict_method:
-                # Construct the dictionary for the current constraint
-                con_dict = {"type": con_type, "fun": con_func, "jac": con_jac_func}
+                # Split "both" (equality) constraints into two inequality constraints to avoid "Singular matrix E in LSQ subproblem" errors.
+                if con_type == "eq":
+                    con_list.append(
+                        {"type": "ineq", "fun": con_func, "jac": con_jac_func}
+                    )
+                    con_list.append(
+                        {
+                            "type": "ineq",
+                            "fun": lambda x, _info=con_i_info: -self._constraint_wrapper(
+                                x, _info
+                            ),
+                            "jac": lambda x, _info=con_i_info: -self._constraint_jac_wrapper(
+                                x, _info
+                            ),
+                        }
+                    )
+                else:
+                    # Construct the dictionary for the current constraint
+                    con_dict = {"type": con_type, "fun": con_func, "jac": con_jac_func}
 
-                # Append to the list
-                con_list.append(con_dict)
+                    # Append to the list
+                    con_list.append(con_dict)
             else:
                 # Construct the NonlinearConstraint object
                 con_obj = NonlinearConstraint(
