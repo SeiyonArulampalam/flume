@@ -37,9 +37,6 @@
 }
 
 /* Main Icon */
-a.icon.icon-home {
-  display: none;
-}
 
 /* Main content area */
 .wy-nav-content {
@@ -86,11 +83,6 @@ code, pre {
 
 p {
   text-align: justify
-}
-
-/* Hide project name text below logo */
-.wy-side-nav-search .project-name {
-  display: none;
 }
 
 /* Default */
