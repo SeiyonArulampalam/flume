@@ -38,6 +38,7 @@ source_suffix = {
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "sphinx_rtd_theme"
+html_logo = "source/_static/Flume_Logo.svg"
 html_static_path = ["source/_static"]
 html_css_files = ["custom.css"]
 html_js_files = ["repo.js"]

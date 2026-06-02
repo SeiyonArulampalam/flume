@@ -2,6 +2,10 @@
 [![Lint](https://github.com/smdogroup/flume/actions/workflows/black.yml/badge.svg)](https://github.com/smdogroup/flume/actions/workflows/black.yml)
 [![Run Unittests](https://github.com/smdogroup/flume/actions/workflows/test.yml/badge.svg)](https://github.com/smdogroup/flume/actions/workflows/test.yml)
 
+<h2 align="center">
+    <img src="docs/source/_static/Flume_Logo.svg" width="600" />
+</h2>
+
 # _Flume_
 
 _Flume_ is an open-source framework for multidisciplinary analysis and adjoint evaluations based on directed acyclic graphs. It is intended to be a lightweight framework that affords users with a degree of flexibility in implementing their own analysis and optimization procedures while providing a common underlying structure. _Flume_ also has a set of interfaces between some common optimizers, which allow the user to easily set up an optimization problem that corresponds to their specific needs.
