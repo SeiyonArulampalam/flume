@@ -55,7 +55,7 @@ class FlumePyOptSparseInterface:
             )
 
         return
-    
+
     def _objconfun(self, xdict: dict):
         """
         DOCS:
@@ -74,7 +74,7 @@ class FlumePyOptSparseInterface:
             raise RuntimeError(
                 f"The objective information for the system named '{self.flume_sys.sys_name}' has not yet been declared, so _objconfun can not be executed. Ensure that the function 'declare_objective' has been called."
             )
-        
+
         # Set the variable values for the various analyses
         self._set_system_variables(xdict, self.it_counter)
 
@@ -88,11 +88,22 @@ class FlumePyOptSparseInterface:
             * self.flume_sys.obj_scale
         )
 
-        # Evaluate the constraint functions TODO:
-
-        # Store the data in the funcs dictionary
+        # Store the objective function value in the funcs dictionary
         funcs = {}
         funcs[self.flume_sys.obj_local_name] = obj * self.flume_sys.obj_scale
+
+        # Evaluate the constraint functions
+        for con in self.flume_sys.con_info:
+            # Perform the analysis for the current constraint function
+            self.flume_sys.con_info[con]["instance"].analyze(debug_print=False)
+
+            # Extract the output for the constraint
+            con_name = self.flume_sys.con_info[con]["local_name"]
+
+            con_val = self.flume_sys.con_info[con]["instance"].outputs[con_name].value
+
+            # Store the constraint value in the funcs dictionary
+            funcs[con_name] = con_val
 
         # Call the logger function
         self.flume_sys.log_information(iter_number=self.it_counter)
@@ -111,7 +122,7 @@ class FlumePyOptSparseInterface:
         """
 
         return
-    
+
     def _addVarGroups(self, x0dict: dict, optProb: Optimization):
         """
         DOCS:
@@ -156,6 +167,83 @@ class FlumePyOptSparseInterface:
 
         return
 
+    def _addConGroups(self, optProb: Optimization):
+        """
+        DOCS:
+        """
+
+        # Loop through each constraint in the Flume System instance
+        for con in self.flume_sys.con_info:
+            # Extract the local name of the constraint
+            con_name = self.flume_sys.con_info[con]["local_name"]
+
+            # Perform the analysis to get the size for the constraint
+            self.flume_sys.con_info[con]["instance"].analyze(debug_print=False)
+
+            con_val = self.flume_sys.con_info[con]["instance"].outputs[con_name].value
+            if isinstance(con_val, np.ndarray):
+                con_size = con_val.size
+            else:
+                con_size = 1
+
+            # Extract the direction of the constraint
+            direction = self.flume_sys.con_info[con]["direction"]
+            rhs_val = self.flume_sys.con_info[con]["rhs"]
+
+            # Greater than inequality constraints
+            if direction == "geq":
+                # If rhs = 0.0...
+                if rhs_val == 0.0:
+                    optProb.addConGroup(
+                        name=con_name, nCon=con_size, lower=0.0, upper=None
+                    )
+                # If rhs != 0.0...
+                else:
+                    optProb.addConGroup(
+                        name=con_name,
+                        nCon=con_size,
+                        lower=1.0,
+                        upper=None,
+                        scale=rhs_val,
+                    )
+            # Less than inequality constraints
+            elif direction == "leq":
+                # If rhs = 0.0...
+                if rhs_val == 0.0:
+                    optProb.addConGroup(
+                        name=con_name, nCon=con_size, lower=None, upper=0.0
+                    )
+                # If rhs != 0.0...
+                else:
+                    optProb.addConGroup(
+                        name=con_name,
+                        nCon=con_size,
+                        lower=None,
+                        upper=1.0,
+                        scale=rhs_val,
+                    )
+            # Equality constraints
+            elif direction == "both":
+                # If rhs = 0.0...
+                if rhs_val == 0.0:
+                    optProb.addConGroup(
+                        name=con_name, nCon=con_size, lower=0.0, upper=0.0
+                    )
+                # If rhs != 0.0...
+                else:
+                    optProb.addConGroup(
+                        name=con_name,
+                        nCon=con_size,
+                        lower=1.0,
+                        upper=1.0,
+                        scale=rhs_val,
+                    )
+
+            else:
+                raise RuntimeError(
+                    "Constraint direction must be 'geq', 'leq', or 'both'."
+                )
+
     def _construct_optimization_problem(
         self, opt_prob_name: str, x0dict: dict, optimizer: str, options: dict = None
     ) -> tuple[Optimizer, Optimization]:
@@ -171,7 +259,8 @@ class FlumePyOptSparseInterface:
         # Add the design variable groups to the problem
         self._addVarGroups(x0dict=x0dict, optProb=optProb)
 
-        # Add the constraints to the problem TODO:
+        # Add the constraints to the problem
+        self._addConGroups(optProb=optProb)
 
         # Add the objective to the problem
         obj_name = self.flume_sys.obj_local_name
@@ -182,6 +271,18 @@ class FlumePyOptSparseInterface:
             from pyoptsparse import SLSQP
 
             opt = SLSQP(options=options)
+        elif optimizer.lower() == "PSQP".lower():
+            from pyoptsparse import PSQP
+
+            opt = PSQP(options=options)
+        elif optimizer.lower() == "NSGA2".lower():
+            from pyoptsparse import NSGA2
+
+            opt = NSGA2(options=options)
+        elif optimizer.lower() == "SNOPT".lower():
+            from pyoptsparse import SNOPT
+
+            opt = SNOPT(options=options)
         else:
             raise NotImplementedError(
                 f"Optimizer by the name of '{optimizer}' not yet implemented."
@@ -195,16 +296,18 @@ class FlumePyOptSparseInterface:
         opt_prob_name: str,
         optimizer: str = "SLSQP",
         options: dict = None,
-        output_dir: str = "."
+        output_dir: str = ".",
         # TODO: determine if an option to store History file should go here
     ) -> Solution:
         """
         DOCS:
         """
 
+        # ic(optimizer)
+
         # Get default options if user did not provide them directly
-        if options is None:
-            options = self._get_default_options(optimizer=optimizer)
+        # if options is None:
+        #     options = self._get_default_options(optimizer=optimizer)
 
         # Construct the optimization problem
         opt, optProb = self._construct_optimization_problem(
@@ -214,22 +317,49 @@ class FlumePyOptSparseInterface:
             options=options,
         )
 
+        # Update the options with the output directory for the Flume system
+        if options is None:
+            self._update_options_output_directory(optimizer, opt)
+
         # Perform the optimization
-        sol = opt(optProb, sens="FD") # TODO: need to set this to be the sensitivity function, not FD
+        sol = opt(
+            optProb, sens="FD"
+        )  # TODO: need to set this to be the sensitivity function, not FD
 
         # Return the solution
         return sol
-    
-    def _get_default_options(self, optimizer: str):
+
+    def _update_options_output_directory(self, optimizer: str, opt: Optimizer):
         """
-        DOCS:        
+        DOCS:
         """
 
-        # Set a dictionary with some default options 
+        # Update the output file names with the Flume output directory for each optimizer
         if optimizer.lower() == "slsqp":
-            options = {"ACC": 1e-7, "MAXIT": 250, "IPRINT": 1, "IFILE": os.path.join(self.flume_sys.log_prefix, "SLSQP.out")}
+            options = opt.defaultOptions
+            options["IFILE"] = os.path.join(self.flume_sys.log_prefix, "SLSQP.out")
+        elif optimizer.lower() == "psqp":
+            options = opt.getOptions()
+            options["IFILE"] = os.path.join(self.flume_sys.log_prefix, "PSQP.out")
+        elif optimizer.lower() == "nsga2":
+            options = opt.getOptions()
+            options["PrintOut"] = (
+                0  # note that there is no way to specify where the output files go besides the current directory, so turning them off entirely by default
+            )
+        elif optimizer.lower() == "snopt":
+            options = opt.getOptions()
+            options["Print file"] = os.path.join(
+                self.flume_sys.log_prefix, "SNOPT_print.out"
+            )
+            options["Summary file"] = os.path.join(
+                self.flume_sys.log_prefix, "SNOPT_summary.out"
+            )
         else:
-            raise NotImplementedError(f"Have not implemented default options for optimizer '{optimizer}' yet.")
+            raise NotImplementedError(
+                f"Have not implemented default options for optimizer '{optimizer}' yet."
+            )
 
-        return options
-        
+        # Set the updated options
+        opt.options = options
+
+        return
