@@ -943,7 +943,13 @@ class Analysis:
         return global_name
 
     def test_isolated_adjoint(
-        self, print_res=True, debug_print=False, method="cs", defined_vars={}
+        self,
+        print_res=True,
+        debug_print=False,
+        method="cs",
+        defined_vars={},
+        dh_fd=1e-6,
+        dh_cs=1e-30,
     ):
         """
         Tests the adjoint implementation for an analysis object (ignores any sub-analyses for the isolated case). Currently, only the complex-step method is implemented for this test, so calculations must be complex-safe.
@@ -1070,10 +1076,10 @@ class Analysis:
 
         # Set the step size based on the method used for the derivative check
         if method == "cs":
-            dh = 1e-30
+            dh = dh_cs
             mode = "complex"
         elif method == "fd":
-            dh = 1e-6
+            dh = dh_fd
             mode = "real"
         else:
             raise ValueError("Method must be 'fd' or 'cs'.")
@@ -1212,7 +1218,13 @@ class Analysis:
         return err
 
     def test_combined_adjoint(
-        self, print_res=True, debug_print=False, method="cs", defined_vars={}
+        self,
+        print_res=True,
+        debug_print=False,
+        method="cs",
+        defined_vars={},
+        dh_cs=1e-30,
+        dh_fd=1e-6,
     ):
         """
         Tests the adjoint implementation for an analysis object and accounts for any sub-analyses within the stack.
@@ -1408,12 +1420,12 @@ class Analysis:
 
                 # Perturb the design variable by a small amount in the imaginary plane in the previously determined random direction
                 if method == "cs":
-                    dh = 1e-30
+                    dh = dh_cs
                     pert_var_values[obj][var] = (
                         def_var_values[obj][var] + 1.0j * dh * pert_vals[obj][var]
                     )
                 elif method == "fd":
-                    dh = 1e-6
+                    dh = dh_fd
                     pert_var_values[obj][var] = (
                         def_var_values[obj][var] + dh * pert_vals[obj][var]
                     )
