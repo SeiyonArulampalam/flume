@@ -116,12 +116,92 @@ class FlumePyOptSparseInterface:
 
         return funcs, fail
 
-    def _objconGradFun(self, xdict: dict):
+    def _objconGradFun(self, xdict: dict, funcs: dict):
         """
         DOCS:
         """
 
-        return
+        # Check to make sure that the objective analysis info has been set, otherwise raise an error
+        if not hasattr(self.flume_sys, "obj_analysis"):
+            raise RuntimeError(
+                f"The objective information for the system named '{self.flume_sys.sys_name}' has not yet been declared, so evalObjCon can not be executed. Ensure that the function 'declare_objective' has been called."
+            )
+
+        # Initialize the dictionary that will store the gradient information
+        grad_vals = {}
+
+        # Compute the gradient of the objective function, where the seed value is set to 1.0 for the output of interest
+        self.flume_sys.obj_analysis._add_output_seed(outputs=[self.obj_name], seed=1.0)
+
+        self.flume_sys.obj_analysis.analyze_adjoint(debug_print=False)
+
+        # Extract the derivative of the objective wrt the design variables
+        obj_name = self.flume_sys.obj_local_name
+        grad_vals[obj_name] = {}
+        for var in self.flume_sys.design_vars_info:
+            # Extract the local name of the variable
+            local_name = self.flume_sys.design_vars_info[var]["local_name"]
+
+            # Extract the derivative for the current design variable
+            gradx_i = (
+                self.flume_sys.design_vars_info[var]["instance"]
+                .variables[local_name]
+                .deriv
+            )
+
+            # Store the gradient info in the dictionary
+            grad_vals[obj_name][var] = gradx_i
+
+        # Loop through the constraints in the System
+        for con in self.flume_sys.con_info:
+            # Extract the local name of the constraint
+            con_name = self.flume_sys.con_info[con]["local_name"]
+
+            grad_vals[con_name] = {}
+
+            # Set the seed for the current constraint
+            con_val = self.flume_sys.con_info[con]["instance"].outputs[con_name].value
+
+            if isinstance(con_val, float):
+                seed = 1.0
+            elif isinstance(con_val, np.ndarray):
+                seed = np.ones_like(con_val)
+            else:
+                raise RuntimeError(
+                    f"The type for the constraint value '{con_name}' is not a float or NumPy array, which is unexpected behavior."
+                )
+
+            # Add the output seed
+            self.flume_sys.con_info[con]["instance"]._add_output_seed(
+                outputs=[con_name], seed=seed
+            )
+
+            # Perform the adjoint analysis
+            self.flume_sys.con_info[con]["instance"].analyze_adjoint(debug_print=False)
+
+            # Loop through the variables in the system
+            for var in self.flume_sys.design_vars_info:
+                # Extract the derivative value for the current constraint and variable combination
+                local_var_name = self.flume_sys.design_vars_info[var]["local_name"]
+
+                gradc_i = (
+                    self.flume_sys.design_vars_info[var]["instance"]
+                    .variables[local_var_name]
+                    .deriv
+                )
+
+                # Assign the gradient value into the grad_vals dictionary
+                grad_vals[con_name][var] = gradc_i
+
+        # Add the profiling information for the current iteration
+        self.flume_sys.profile_iteration(self.it_counter - 1)
+
+        # Call the callback function, if it was provided
+        # FIXME: need to document the callback function here, as the callback takes in xdict instead of x (unlike the ParOpt interface)
+        if self.callback is not None:
+            self.callback(xdict, self.it_counter - 1)
+
+        return grad_vals
 
     def _addVarGroups(self, x0dict: dict, optProb: Optimization):
         """
@@ -185,6 +265,9 @@ class FlumePyOptSparseInterface:
                 con_size = con_val.size
             else:
                 con_size = 1
+
+            # Store the size in the constraints info dictionary
+            self.flume_sys.con_info[con]["size"] = con_size
 
             # Extract the direction of the constraint
             direction = self.flume_sys.con_info[con]["direction"]
@@ -323,7 +406,7 @@ class FlumePyOptSparseInterface:
 
         # Perform the optimization
         sol = opt(
-            optProb, sens="FD"
+            optProb, sens=self._objconGradFun
         )  # TODO: need to set this to be the sensitivity function, not FD
 
         # Return the solution
@@ -336,7 +419,7 @@ class FlumePyOptSparseInterface:
 
         # Update the output file names with the Flume output directory for each optimizer
         if optimizer.lower() == "slsqp":
-            options = opt.defaultOptions
+            options = opt.getOptions()
             options["IFILE"] = os.path.join(self.flume_sys.log_prefix, "SLSQP.out")
         elif optimizer.lower() == "psqp":
             options = opt.getOptions()
@@ -354,6 +437,7 @@ class FlumePyOptSparseInterface:
             options["Summary file"] = os.path.join(
                 self.flume_sys.log_prefix, "SNOPT_summary.out"
             )
+            options["Verify level"] = 3
         else:
             raise NotImplementedError(
                 f"Have not implemented default options for optimizer '{optimizer}' yet."
