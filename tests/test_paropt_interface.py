@@ -7,6 +7,12 @@ from examples.rosenbrock.rosenbrock_problem_classes import (
     RosenbrockConstraint,
     RosenbrockDVs,
 )
+from examples.thomson_problem.thomson_problem_classes import (
+    ParticleConstraints,
+    ParticlePositions,
+    PotentialEnergy,
+)
+from math import pi
 
 try:
     from paropt import ParOpt
@@ -176,6 +182,148 @@ class TestConstrainedRosenbrock(unittest.TestCase):
             rtol=5e-4,
             err_msg="The computed optimal values do not match the expected solution for the constrained Rosenbrock function.",
             verbose=True,
+        )
+
+        return
+
+
+class TestThomsonProblem(unittest.TestCase):
+    """
+    Tests the optimization of the Thomson problem using the FlumeParOptInterface. Here, the check is that the objective function value at the optimized point matches the value for the known, exact solutions within a relative error tolerance of 1e-3.
+    """
+
+    def construct_system(self, n_p):
+
+        # Construct the analysis objects for the system
+        positions = ParticlePositions(obj_name="positions", sub_analyses=[], n_p=n_p)
+
+        self.positions = positions
+
+        energy = PotentialEnergy(obj_name="energy", sub_analyses=[positions], n_p=n_p)
+
+        cons = ParticleConstraints(obj_name="cons", sub_analyses=[positions], n_p=n_p)
+
+        # Construct the system
+        sys = System(
+            sys_name="thomson_problem",
+            top_level_analysis_list=[energy, cons],
+            log_name=f"flume_{n_p}.log",
+            log_prefix="tests/thomson_problem_paropt",
+        )
+
+        # Declare the design variables for the system
+        sys.declare_design_vars(
+            global_var_name={
+                "positions.theta": {"lb": -pi, "ub": pi},
+                "positions.phi": {"lb": 0.0, "ub": 2 * pi},
+            }
+        )
+
+        # Declare the objective
+        sys.declare_objective(global_obj_name="energy.f")
+
+        # Declare the constraints
+        sys.declare_constraints(
+            global_con_name={"cons.c": {"direction": "both", "rhs": 0.0}}
+        )
+
+        return sys
+
+    def optimize_system(self, n_p: int, maxit: int = 100):
+        """
+        Using the number of particles provided with n_p, optimizes the system using the FlumeParOptInterface and returns the objective function value.
+        """
+
+        flume_sys = self.construct_system(n_p=n_p)
+
+        # Construct the ParOpt interface
+        interface = FlumeParOptInterface(flume_sys=flume_sys)
+
+        # Set random positions for x, y, z to start
+        theta0 = np.random.uniform(size=n_p)
+        phi0 = np.random.uniform(size=n_p)
+
+        # Set the initial guess using theta0 and phi0
+        self.positions.set_var_values(variables={"theta": theta0, "phi": phi0})
+
+        # Optimize the problem with ParOpt's TR method
+        x, fstar, con_star = interface.optimize_system(algorithm="tr")
+
+        # Check that the potential energy at the final point matches the expected value
+        obj_val = fstar
+
+        return obj_val
+
+    def test_optimization_2np(self):
+        """
+        Tests that the solution for the thomson problem with N particles matches the expected solution.
+        """
+
+        # Construct the system
+        n_p = 2
+
+        # Optimize the system and get the objective value
+        obj_val = self.optimize_system(n_p=n_p)
+        obj_star = 0.5
+
+        # Compute the relative error
+        rel_error = abs(obj_val - obj_star) / obj_star
+
+        # Perform the check
+        self.assertLessEqual(
+            a=rel_error,
+            b=1e-3,
+            msg=f"The optimal value of the objective function does not match the expected value for {n_p} particles within the relative error tolerance 1e-3.",
+        )
+
+        return
+
+    def test_optimization_3np(self):
+        """
+        Tests that the solution for the thomson problem with N particles matches the expected solution.
+        """
+
+        # Construct the system
+        n_p = 3
+        maxit = 150
+
+        # Optimize the system and get the objective value
+        obj_val = self.optimize_system(n_p=n_p, maxit=maxit)
+        obj_star = 1.732050808
+
+        # Compute the relative error
+        rel_error = abs(obj_val - obj_star) / obj_star
+
+        # Perform the check
+        self.assertLessEqual(
+            a=rel_error,
+            b=1e-3,
+            msg=f"The optimal value of the objective function does not match the expected value for {n_p} particles within the relative error tolerance 1e-3.",
+        )
+
+        return
+
+    def test_optimization_12np(self):
+        """
+        Tests that the solution for the thomson problem with N particles matches the expected solution.
+        """
+
+        # Construct the system
+        n_p = 12
+        maxit = 400
+
+        # Optimize the system and get the objective value
+        obj_val = self.optimize_system(n_p=n_p, maxit=maxit)
+        obj_star = 49.165253058
+
+        # Compute the relative error
+        rel_error = abs(obj_val - obj_star) / obj_star
+
+        # Perform the check
+        self.assertLessEqual(
+            a=rel_error,
+            b=5e-3,
+            msg=f"The optimal value of the objective function does not match the expected value for {n_p} particles within the relative error tolerance 5e-3.",
         )
 
         return
