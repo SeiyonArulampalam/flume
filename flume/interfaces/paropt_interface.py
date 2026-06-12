@@ -30,7 +30,7 @@ class FlumeParOptInterface:
 
     def __init__(self, flume_sys: System, callback=None, update=None):
         """
-        Creates an interface that is used to link an instance of a Flume System to a ParOpt optimization problem.
+        Creates an interface that is used to link an instance of a Flume System to a ParOpt optimization problem. Note that at construction of the interface, each Analysis for the constraints is performed to determine the size for each constraint in the System.
 
         Parameters
         ----------
@@ -75,10 +75,31 @@ class FlumeParOptInterface:
 
             ncon = 0
             for con in con_keys:
-                if self.flume_sys.con_info[con]["direction"] == "both":
-                    ncon += 2
+
+                # Get the Analysis object for the current constraint
+                self.flume_sys.con_info[con]["instance"].analyze(debug_print=False)
+
+                # Perform the analysis for the current object and get the size of the constraint
+                con_local_name = self.flume_sys.con_info[con]["local_name"]
+
+                con_val = (
+                    self.flume_sys.con_info[con]["instance"]
+                    .outputs[con_local_name]
+                    .value
+                )
+
+                if isinstance(con_val, np.ndarray):
+                    con_size = con_val.size
                 else:
-                    ncon += 1
+                    con_size = 1
+
+                # Store the constraint size
+                self.flume_sys.con_info[con]["size"] = con_size
+
+                if self.flume_sys.con_info[con]["direction"] == "both":
+                    ncon += 2 * con_size
+                else:
+                    ncon += con_size
 
             self.ncon = ncon
         else:
@@ -145,7 +166,6 @@ class FlumeParOptInterface:
             )
 
         # Extract the design variable and bound values for each variable in the system
-        tracked_dvs = 0
         for var in self.flume_sys.design_vars_info:
             # Extract the local name for the current variable
             local_name = self.flume_sys.design_vars_info[var]["local_name"]
@@ -275,75 +295,94 @@ class FlumeParOptInterface:
 
             con_val = self.flume_sys.con_info[con]["instance"].outputs[con_name].value
 
+            # Get the constraint size
+            con_size = self.flume_sys.con_info[con]["size"]
+
+            # Extract the direction and rhs values
+            direction = self.flume_sys.con_info[con]["direction"]
+            rhs = self.flume_sys.con_info[con]["rhs"]
+
             # Using the direction information about the constraint, set the normalized constraint value
-            if self.flume_sys.con_info[con]["direction"] == "geq":
+            if direction == "geq":
                 # If rhs is not 0.0, scale the constraint
-                if self.flume_sys.con_info[con]["rhs"] != 0.0:
-                    rhs_val = self.flume_sys.con_info[con]["rhs"]
-                    con_val = con_val / rhs_val - 1.0
+                if rhs != 0.0:
+                    con_val = con_val / rhs - 1.0
 
                 # If the rhs is < 0, flip the sign for the constraint
-                if self.flume_sys.con_info[con]["rhs"] < 0.0:
+                if rhs < 0.0:
                     con_val *= -1.0
 
                 # Append the constraint value to the constraints list
-                con_list.append(con_val)
+                if con_size > 1:
+                    con_list.extend(con_val.tolist())
+                else:
+                    con_list.append(con_val)
 
-            elif self.flume_sys.con_info[con]["direction"] == "leq":
+            elif direction == "leq":
                 # If rhs is not 0.0, scale the constraint
-                if self.flume_sys.con_info[con]["rhs"] != 0.0:
-                    rhs_val = self.flume_sys.con_info[con]["rhs"]
-                    con_val = 1.0 - con_val / rhs_val
+                if rhs != 0.0:
+                    con_val = 1.0 - con_val / rhs
                 else:
                     # This step is necessary only for 'leq' to convert constraint to proper form, c(x) >= 0.0
                     con_val *= -1.0
 
                 # If the rhs is < 0, flip the sign for the constraint
-                if self.flume_sys.con_info[con]["rhs"] < 0.0:
+                if rhs < 0.0:
                     con_val *= -1.0
 
                 # Append the constraint value to the constraints list
-                con_list.append(con_val)
+                if con_size > 1:
+                    con_list.extend(con_val.tolist())
+                else:
+                    con_list.append(con_val)
 
-            elif self.flume_sys.con_info[con]["direction"] == "both":
+            elif direction == "both":
                 # If rhs is not 0.0, scale the constraints
-                if self.flume_sys.con_info[con]["rhs"] != 0.0:
-                    rhs_val = self.flume_sys.con_info[con]["rhs"]
-
+                if rhs != 0.0:
                     # Greater than inequality part
-                    con_val_geq = con_val / rhs_val - 1.0
+                    con_val_geq = con_val / rhs - 1.0
 
                     # If the rhs is < 0, flip the sign for the constraint
-                    if self.flume_sys.con_info[con]["rhs"] < 0.0:
+                    if rhs < 0.0:
                         con_val_geq *= -1.0
 
-                    con_list.append(con_val_geq)
+                    if con_size > 1:
+                        con_list.extend(con_val_geq.tolist())
+                    else:
+                        con_list.append(con_val_geq)
 
                     # Less than inequality part
-                    con_val_leq = 1.0 - con_val / rhs_val
+                    con_val_leq = 1.0 - con_val / rhs
 
                     # If the rhs is < 0, flip the sign for the constraint
-                    if self.flume_sys.con_info[con]["rhs"] < 0.0:
+                    if rhs < 0.0:
                         con_val_leq *= -1.0
 
-                    con_list.append(con_val_leq)
+                    if con_size > 1:
+                        con_list.extend(con_val_leq.tolist())
+                    else:
+                        con_list.append(con_val_leq)
                 else:
                     # Greater than inequality part
                     con_val_geq = con_val
 
-                    con_list.append(con_val_geq)
+                    if con_size > 1:
+                        con_list.extend(con_val_geq.tolist())
+                    else:
+                        con_list.append(con_val_geq)
 
                     # Less than inequality part
                     con_val_leq = -con_val
 
-                    con_list.append(con_val_leq)
+                    if con_size > 1:
+                        con_list.extend(con_val_leq.tolist())
+                    else:
+                        con_list.append(con_val_leq)
 
             else:
                 raise RuntimeError(
                     "Constraint direction must be 'geq', 'leq', or 'both'."
                 )
-
-            # con_val -= self.flume_sys.con_info[con]["rhs"]
 
         # Call the logger function
         self.flume_sys.log_information(iter_number=self.it_counter)
@@ -353,6 +392,10 @@ class FlumeParOptInterface:
 
         # Update the iteration counter
         self.it_counter += 1
+
+        # Store the objective and constraint info
+        self.obj_val = obj
+        self.con_vals = con_list
 
         return fail, obj, con_list
 
@@ -367,7 +410,7 @@ class FlumeParOptInterface:
         g : ParOptVec
             Gradient of the objective function at x
         A : ParOptVec
-            Gradients of the constraints evaluated at x
+            Gradients of the constraints evaluated at x. For vector-valued constraints, each element of the constraint array occupies its own row in the constraint Jacobian
 
         Returns
         -------
@@ -411,97 +454,104 @@ class FlumeParOptInterface:
             # Extract the local name of the constraint
             con_name = self.flume_sys.con_info[con]["local_name"]
 
-            # Set the seed for the current constraint
-            con_val = self.flume_sys.con_info[con]["instance"].outputs[con_name].value
+            # Get the size of the constraint
+            con_size = self.flume_sys.con_info[con]["size"]
 
-            if isinstance(con_val, float):
-                seed = 1.0
-            elif isinstance(con_val, np.ndarray):
-                seed = np.ones_like(con_val)
-            else:
-                raise RuntimeError(
-                    f"The type for the constraint value '{con_name}' is not a float or NumPy array, which is unexpected behavior."
+            # Get the constraint direction and rhs value
+            direction = self.flume_sys.con_info[con]["direction"]
+            rhs = self.flume_sys.con_info[con]["rhs"]
+
+            # Loop through by the size of the constraint (each entry in the array is effectively a separate constraint) and evaluate the contributions
+            for i in range(con_size):
+                # Set the seed for the current constraint
+                if con_size == 1:
+                    seed = 1.0
+                else:
+                    seed = np.zeros(con_size)
+                    seed[i] = 1.0
+
+                # Add the output seed
+                self.flume_sys.con_info[con]["instance"]._add_output_seed(
+                    outputs=[con_name], seed=seed
                 )
 
-            # Add the output seed
-            self.flume_sys.con_info[con]["instance"]._add_output_seed(
-                outputs=[con_name], seed=seed
-            )
-
-            # Perform the adjoint analysis
-            self.flume_sys.con_info[con]["instance"].analyze_adjoint(debug_print=False)
-
-            # Loop through the variables in the system
-            for var in self.flume_sys.design_vars_info:
-                # Get the indices for the current variable
-                start = self.indices[var]["start"]
-                end = self.indices[var]["end"]
-
-                # Extract the derivative value for the current constraint and variable combination
-                local_var_name = self.flume_sys.design_vars_info[var]["local_name"]
-                gradc_i = (
-                    self.flume_sys.design_vars_info[var]["instance"]
-                    .variables[local_var_name]
-                    .deriv
+                # Perform the adjoint analysis
+                self.flume_sys.con_info[con]["instance"].analyze_adjoint(
+                    debug_print=False
                 )
 
-                # Assign the constraint gradient, accounting for the scaling, when necessary
-                if self.flume_sys.con_info[con]["direction"] == "geq":
-                    # If rhs is not 0.0, apply the scale to the constraint
-                    if self.flume_sys.con_info[con]["rhs"] != 0.0:
-                        rhs_val = self.flume_sys.con_info[con]["rhs"]
-                        gradc_i /= rhs_val
+                # Loop through the variables in the system
+                for var in self.flume_sys.design_vars_info:
+                    # Get the indices for the current variable
+                    start = self.indices[var]["start"]
+                    end = self.indices[var]["end"]
 
-                    if self.flume_sys.con_info[con]["rhs"] < 0.0:
-                        gradc_i *= -1.0
+                    # Extract the derivative value for the current constraint and variable combination
+                    local_var_name = self.flume_sys.design_vars_info[var]["local_name"]
+                    gradc_i = (
+                        self.flume_sys.design_vars_info[var]["instance"]
+                        .variables[local_var_name]
+                        .deriv
+                    )
 
-                    A[con_index][start:end] = gradc_i
+                    # Copy the gradient value if it is an array (to ensure nothing is overwritten)
+                    if isinstance(gradc_i, np.ndarray):
+                        gradc_i = gradc_i.copy()
 
-                elif self.flume_sys.con_info[con]["direction"] == "leq":
-                    # If rhs is not 0.0, scale the constraint
-                    if self.flume_sys.con_info[con]["rhs"] != 0.0:
-                        rhs_val = self.flume_sys.con_info[con]["rhs"]
-                        gradc_i /= -rhs_val
-                    else:
-                        gradc_i *= -1.0
+                    # Assign the constraint gradient, accounting for the scaling, when necessary
+                    if direction == "geq":
+                        # If rhs is not 0.0, apply the scale to the constraint
+                        if rhs != 0.0:
+                            gradc_i /= rhs
 
-                    if self.flume_sys.con_info[con]["rhs"] < 0.0:
-                        gradc_i *= -1.0
+                        if rhs < 0.0:
+                            gradc_i *= -1.0
 
-                    A[con_index][start:end] = gradc_i
+                        A[con_index + i][start:end] = gradc_i
 
-                elif self.flume_sys.con_info[con]["direction"] == "both":
-                    # If rhs is not 0.0, scale the constraints
-                    if self.flume_sys.con_info[con]["rhs"] != 0.0:
-                        rhs_val = self.flume_sys.con_info[con]["rhs"]
+                    elif direction == "leq":
+                        # If rhs is not 0.0, scale the constraint
+                        if rhs != 0.0:
+                            gradc_i /= -rhs
+                        else:
+                            gradc_i *= -1.0
 
+                        if rhs < 0.0:
+                            gradc_i *= -1.0
+
+                        A[con_index + i][start:end] = gradc_i
+
+                    elif direction == "both":
+                        # If rhs is not 0.0, scale the constraints
+                        if rhs != 0.0:
+                            # Greater than inequality part
+                            gradc_i_geq = gradc_i.copy() / rhs
+
+                            if rhs < 0.0:
+                                gradc_i_geq *= -1.0
+
+                            # Less than inequality part
+                            gradc_i_leq = -gradc_i.copy() / rhs
+
+                            if rhs < 0.0:
+                                gradc_i_leq *= -1.0
+
+                        else:
+                            gradc_i_geq = gradc_i.copy()
+                            gradc_i_leq = -1.0 * gradc_i.copy()
+
+                        # Assign the constraints
                         # Greater than inequality part
-                        gradc_i_geq = gradc_i / rhs_val
-
-                        if self.flume_sys.con_info[con]["rhs"] < 0.0:
-                            gradc_i_geq *= -1.0
-
-                        A[con_index][start:end] = gradc_i_geq
-
-                        con_index += 1
+                        A[con_index + i][start:end] = gradc_i_geq
 
                         # Less than inequality part
-                        gradc_i_leq = -gradc_i / rhs_val
-
-                        if self.flume_sys.con_info[con]["rhs"] < 0.0:
-                            gradc_i_leq *= -1.0
-
-                        A[con_index][start:end] = gradc_i_leq
-                    else:
-                        A[con_index][start:end] = gradc_i
-
-                        con_index += 1
-
-                        # Less than inequality part
-                        A[con_index][start:end] = -1.0 * gradc_i
+                        A[con_index + con_size + i][start:end] = gradc_i_leq
 
             # Update the constraint index
-            con_index += 1
+            if direction == "both":
+                con_index += 2 * con_size
+            else:
+                con_index += con_size
 
         # Add the profiling information for the current iteration
         self.flume_sys.profile_iteration(self.it_counter - 1)
@@ -511,6 +561,79 @@ class FlumeParOptInterface:
             self.callback(x, self.it_counter - 1)
 
         return 0
+
+    def optimize_system(
+        self,
+        algorithm: str = "tr",
+        options: dict = None,
+        check_gradients: bool = False,
+    ) -> tuple[np.ndarray, float, list, ParOpt.Optimizer]:
+        """
+        Performs optimization on the Flume System using ParOpt. Assumes that the user has set the expected initial values for the Flume Analysis instances prior to calling this method (otherwise the defaults for the Flume Analyses will be used).
+
+        Parameters
+        ----------
+        algorithm : str
+            String that specifies the algorithm to use for the optimization. Should be 'tr' (trust-region) or 'mma' (method of moving asymptotes)
+        options : dict
+            Dictionary of options to use for ParOpt. If not provided, the default ParOpt options will be used for the specified algorithm (see ParOpt documentation for details)
+        check_gradients: bool
+            When provided, executes the ParOpt finite difference gradient check for 3 iterations. Returns nothing when this is True. Defaults to False
+
+        Returns
+        -------
+        Assuming check_gradients is False, the following are returned:
+
+        x_opt : np.ndarray
+            Array of design variables at the final point
+        fstar : float
+            Objective function value at the final point
+        con_star : list
+            List of constraint function values at the final point
+        opt : ParOpt.Optimizer
+            Instance of ParOpt's Optimizer class (in case the user wants to extract any additional information)
+
+        If check_gradients is True, nothing is returned
+        """
+
+        # Check that the algorithm is acceptable
+        if algorithm not in ["tr", "mma"]:
+            raise ValueError(
+                f"The input for algorithm of '{algorithm} ' is not acceptable. Must be 'tr' or 'mma'."
+            )
+
+        # Construct the ParOpt problem
+        paroptprob = self.construct_paropt_problem()
+
+        # Get the default options if the user did not provide them
+        if options is None:
+            options = self.get_paropt_default_options(
+                algorithm=algorithm, output_prefix=self.flume_sys.log_prefix
+            )
+
+        # Check the gradients for the system, if specified
+        if check_gradients:
+            print("Performing ParOpt Gradient check:")
+            for i in range(3):
+                paroptprob.checkGradients(1e-6)
+            return
+
+        # Perform the optimization
+        opt = ParOpt.Optimizer(paroptprob, options)
+
+        opt.optimize()
+
+        # Extract the optimized point
+        x, z, zw, zl, zu = opt.getOptimizedPoint()
+
+        # Write the optimized point to the json file
+        x_opt = np.array(x)
+
+        # Get the final value of the objective function and constraints
+        fstar = self.obj_val
+        con_star = self.con_vals
+
+        return x_opt, fstar, con_star, opt
 
     def construct_paropt_problem(self):
         """
@@ -546,6 +669,11 @@ class FlumeParOptInterface:
             A dictionary containing the options that can be passed to ParOpt
         """
 
+        # Make the output directory if necessary
+        if not os.path.isdir(output_prefix):
+            os.makedirs(output_prefix, exist_ok=True)
+
+        # Define the dictionary of default options
         options = {
             "algorithm": algorithm,
             "tr_init_size": 0.05,
@@ -553,8 +681,8 @@ class FlumeParOptInterface:
             "tr_max_size": 10.0,
             "tr_eta": 0.25,
             "tr_infeas_tol": 1e-6,
-            "tr_l1_tol": 1e-3,
-            "tr_linfty_tol": 0.0,
+            "tr_l1_tol": 1e-5,
+            "tr_linfty_tol": 1e-5,
             "tr_adaptive_gamma_update": True,
             "tr_max_iterations": maxit,
             "mma_max_iterations": maxit,
