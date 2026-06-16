@@ -1051,7 +1051,7 @@ class Analysis:
                 else:
                     contr = np.dot(perts["pert_" + var], deriv_vals[var])
             else:
-                contr = np.dot(perts["pert_" + var], deriv_vals[var])
+                contr = np.dot(perts["pert_" + var], deriv_vals[var]).item()
 
             # Add the contribution for the current variable to the total value
             ans_tot += contr
@@ -1189,6 +1189,9 @@ class Analysis:
             print("\n", "-" * len(test_case))
             print(test_case)
             print("-" * len(test_case))
+
+            print(ans_tot, cs, err)
+            print(type(ans_tot))
 
             if method == "cs":
                 print("\n %25s  %25s  %25s" % ("Answer", "Complex-step", "Rel Error"))

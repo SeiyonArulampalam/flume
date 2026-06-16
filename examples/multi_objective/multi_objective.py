@@ -443,7 +443,7 @@ if __name__ == "__main__":
     )
 
     # Graph the system
-    graph = sys.graph_network(make_connections=False)
+    graph = sys.graph_network()
     graph.render("MultiObjective_SystemGraph", directory=sys.log_prefix, cleanup=True)
 
     # Declare the objective and constraints

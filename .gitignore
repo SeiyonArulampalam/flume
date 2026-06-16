@@ -8,5 +8,6 @@ flume_venv/
 *.pdf
 *.log
 tests/rosenbrock_*/
+tests/thomson_problem*/
 docs/_build/
 dist/*

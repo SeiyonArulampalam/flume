@@ -37,20 +37,27 @@ class FlumeParOptInterface:
         flume_sys : System
             Instance of a Flume System that represents the problem to be solved with ParOpt
         callback : callable function, default None
-            This is a callable function that gets executed during every iteration of the evalObjCon method during optimization. See below for the structure of the function
+            This is a callable function that gets executed at the end of every iteration of the evalObjConGradient method during optimization. See below for the structure of the function
         update : callable function, default None
             This is a callable function that gets executed at the start of every iteration of the evalObjCon method during optimization. Nominally, this is used to do parameter updates, such as for a continuation strategy
 
         Note
         ----
-        The callback function is an arbitrary function that the user writes, and it will be called during every evalObjCon execution. It is required that the function is setup such that it takes in two arguments:
+        The callback function is an arbitrary function that the user writes, and it will be called at the end of every evalObjConGradient execution. It is required that the function is setup such that it takes in two arguments:
 
         def user_callback(x, it_number):
             ...
 
         Here, the parameters are:
-        x : current design variable info for the problem
-        it_number : current iteration number for the system
+            x : current design variable info for the problem
+            it_number : current iteration number for the system
+
+        The update function is also a function that the user can optionally provide, and it will be called at the start of every evalObjCon execution. This method is primarily used for updating parameters within the Flume System (e.g. for continuation strategies in topology optimization), and it is structured as follows:
+
+        def user_update(it_number):
+            ...
+
+        where it_number is the current iteration number for the system
         """
 
         # Store the flume system as an attribute

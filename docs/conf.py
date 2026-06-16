@@ -37,6 +37,8 @@ source_suffix = {
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
+autodoc_mock_imports = ["pyoptsparse", "paropt"]
+
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {"logo_only": True}
 html_logo = "source/_static/Flume_Logo.svg"

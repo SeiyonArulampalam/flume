@@ -32,4 +32,4 @@ source venv/bin/activate
 pip install -e .
 ```
 
-After following either of these processes, you should be able to access the base classes and get started with developing your own scripts within the framework! It should be noted that ParOpt is a separate package that is not included with _Flume_ during the build process. For those who want to utilize this interface, we refer you to the [ParOpt installation instructions](https://github.com/smdogroup/paropt/blob/master/INSTALL.txt).
+After following either of these processes, you should be able to access the base classes and get started with developing your own scripts within the framework! It should be noted that ParOpt and pyOptSparse are separate packages that are not included with _Flume_ during the build process. For those who want to utilize these interface, we refer you to the [ParOpt installation instructions](https://github.com/smdogroup/paropt/blob/master/INSTALL.txt) and the [pyOptSparse repository](https://github.com/mdolab/pyoptsparse). 
