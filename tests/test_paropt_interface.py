@@ -247,7 +247,7 @@ class TestThomsonProblem(unittest.TestCase):
         self.positions.set_var_values(variables={"theta": theta0, "phi": phi0})
 
         # Optimize the problem with ParOpt's TR method
-        x, fstar, con_star = interface.optimize_system(algorithm="tr")
+        x, fstar, con_star, opt = interface.optimize_system(algorithm="tr")
 
         # Check that the potential energy at the final point matches the expected value
         obj_val = fstar

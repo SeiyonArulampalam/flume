@@ -51,7 +51,7 @@ class FlumePyOptSparseInterface:
         # Initialize the iteration counter
         self.it_counter = 0
 
-    def _set_system_variables(self, xdict: dict, it_counter: int):
+    def _set_system_variables(self, xdict: dict):
         """
         Private method that is used to set the design variables values provided in the input dictionary into the various Flume Analysis objects.
 
@@ -59,12 +59,10 @@ class FlumePyOptSparseInterface:
         ----------
         xdict : dict
             Dictionary that specifies the current design point for the optimization problem. The keys are the global variable names, and the values are the numeric values for the design variables in the System
-        it_counter : int
-            Iteration number for the optimization
         """
 
         # Since system variables are being set, all analysis objects must be recomputed
-        self.flume_sys.reset_analysis_flags(it_counter)
+        self.flume_sys.reset_analysis_flags()
 
         # Loop through the design variables for the system and set the values for their components
         for var in self.flume_sys.design_vars_info:
@@ -122,7 +120,7 @@ class FlumePyOptSparseInterface:
             )
 
         # Set the variable values for the various analyses
-        self._set_system_variables(xdict, self.it_counter)
+        self._set_system_variables(xdict)
 
         # Perform the analysis for the objective function
         self.flume_sys.obj_analysis.analyze(debug_print=False)
@@ -250,10 +248,6 @@ class FlumePyOptSparseInterface:
                         .deriv
                     )
 
-                    # Apply the scaling, if necessary
-                    if rhs != 0.0:
-                        gradc_i /= abs(rhs)
-
                     # Assign the gradient value into the grad_vals dictionary
                     if i > 0:
                         current = grad_vals[con_name][var]
@@ -359,7 +353,7 @@ class FlumePyOptSparseInterface:
                 scale = 1.0
             else:
                 scale = 1 / abs(rhs_val)
-                bound_val = np.sign(rhs_val)
+                bound_val = rhs_val
 
             # Greater than inequality constraints
             if direction == "geq":
@@ -577,6 +571,7 @@ class FlumePyOptSparseInterface:
             options["Summary file"] = os.path.join(
                 self.flume_sys.log_prefix, "SNOPT_summary.out"
             )
+            options["Verify level"] = 3
         elif optimizer.lower() == "ipopt":
             options = opt.getOptions()
             options["output_file"] = os.path.join(

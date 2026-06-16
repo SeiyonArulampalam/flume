@@ -142,13 +142,13 @@ class FlumeScipyInterface:
 
         return bounds
 
-    def _set_system_variables(self, x, it_counter):
+    def _set_system_variables(self, x):
         """
         Sets the variable values for the analysis objects contained within the system.
         """
 
         # Since system variables are being set, all analysis objects must be recomputed
-        self.flume_sys.reset_analysis_flags(it_counter - 1)
+        self.flume_sys.reset_analysis_flags()
 
         # Loop through the design variables for the system and set for their components
         for var in self.flume_sys.design_vars_info:
@@ -229,7 +229,7 @@ class FlumeScipyInterface:
             )
 
         # Set the variable values for the various analyses
-        self._set_system_variables(x, self.it_counter)
+        self._set_system_variables(x)
 
         # Perform the analysis for the objective function
         self.flume_sys.obj_analysis.analyze(debug_print=False)

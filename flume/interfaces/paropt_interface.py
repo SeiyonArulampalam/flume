@@ -201,7 +201,7 @@ class FlumeParOptInterface:
 
         return
 
-    def set_system_variables(self, x, it_counter):
+    def set_system_variables(self, x):
         """
         Sets the variable values for the analysis objects contained within the System.
 
@@ -209,12 +209,10 @@ class FlumeParOptInterface:
         ----------
         x : ParOptVec
             Design variable vector at the current iteration
-        it_counter : int
-            Current iteration for the optimization
         """
 
         # Since system variables are being set, all analysis objects must be recomputed
-        self.flume_sys.reset_analysis_flags(it_counter)
+        self.flume_sys.reset_analysis_flags()
 
         # Loop through the design variables for the system and set for their components
         for var in self.flume_sys.design_vars_info:
@@ -279,7 +277,7 @@ class FlumeParOptInterface:
             )
 
         # Set the variable values for the various analyses
-        self.set_system_variables(x, self.it_counter)
+        self.set_system_variables(x)
 
         # Perform the analysis for the objective function
         self.flume_sys.obj_analysis.analyze(debug_print=False)

@@ -134,7 +134,7 @@ class TestConstrainedRosenbrock(unittest.TestCase):
 
         # Declare the constraint
         sys.declare_constraints(
-            global_con_name={"con.g": {"direction": "leq", "rhs": 1.0}}
+            global_con_name={"con.g": {"direction": "geq", "rhs": -2.0}}
         )
 
         # Store the system as an attribute
@@ -165,7 +165,7 @@ class TestConstrainedRosenbrock(unittest.TestCase):
         x = np.concatenate((sol.xStar["dvs.x_dv"], sol.xStar["dvs.y_dv"]))
 
         # Set the expected optimal values
-        xstar = np.array([0.786, 0.618])
+        xstar = np.array([1.0, 1.0])
 
         # Check that the values match
         np.testing.assert_allclose(

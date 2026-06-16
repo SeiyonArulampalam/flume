@@ -59,26 +59,22 @@ class System:
 
         return
 
-    def reset_analysis_flags(self, it_counter):
+    def reset_analysis_flags(self):
         """
-        Resets all of the analysis flags for all analyses within the system to be False. This is done when variable values are updated, as all systems must be analyzed again to propagate chanes in design variable values.
+        Resets all of the analysis flags for all analyses within the system to be False. This is done when variable values are updated, as all systems must be analyzed again to propagate changes in design variable values.
         """
 
-        # If it_counter is zero, skip this setp
-        if it_counter == 0:
-            pass
-        else:
-            # Loop through each top-level analysis, resetting each analysis in the stack
-            for top_level in self.top_level_analysis_list:
+        # Loop through each top-level analysis, resetting each analysis in the stack
+        for top_level in self.top_level_analysis_list:
 
-                # If the stack does not exist, make it
-                if not hasattr(top_level, "stack"):
-                    # Assemble the stack
-                    top_level.stack = top_level._make_stack()
+            # If the stack does not exist, make it
+            if not hasattr(top_level, "stack"):
+                # Assemble the stack
+                top_level.stack = top_level._make_stack()
 
-                # Loop through each object within the current top-level's analysis stack and set the analyzed attribute to be False
-                for analysis in top_level.stack:
-                    analysis.analyzed = False
+            # Loop through each object within the current top-level's analysis stack and set the analyzed attribute to be False
+            for analysis in top_level.stack:
+                analysis.analyzed = False
 
         return
 

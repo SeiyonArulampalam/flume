@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flume-smdo"
-version = "1.0.5"
+version = "1.0.6"
 description = "A framework for performing forward and derivative analyses for systems following directed acylic graph structure."
 readme = "README.md"
 authors = [{ name = "Cameron Smith", email = "csmith763@gatech.edu" }]
