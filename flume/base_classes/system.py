@@ -457,6 +457,11 @@ class System:
                 # Add the upper bound, if specified
                 if "ub" in global_var_name[key].keys():
                     self.design_vars_info[key]["ub"] = global_var_name[key]["ub"]
+
+                # Add the scale, if specified
+                if "scale" in global_var_name[key].keys():
+                    self.design_vars_info[key]["scale"] = global_var_name[key]["scale"]
+
             else:
                 continue
 

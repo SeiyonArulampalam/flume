@@ -291,6 +291,12 @@ class FlumePyOptSparseInterface:
             else:
                 ub = 1e30
 
+            # Extract the scale, if it exists
+            if "scale" in self.flume_sys.design_vars_info[var]:
+                inv_scale = 1.0 / self.flume_sys.design_vars_info[var]["scale"]
+            else:
+                inv_scale = 1.0
+
             # Extract the starting value
             x0 = x0dict[var]
 
@@ -308,6 +314,7 @@ class FlumePyOptSparseInterface:
                 value=x0,
                 lower=np.ones_like(x0) * lb,
                 upper=np.ones_like(x0) * ub,
+                scale=inv_scale,
             )
 
         return
