@@ -106,6 +106,7 @@ class System:
         output_directory: str = None,
         interactive: bool = False,
         format: str = "pdf",
+        consolidated_graph: bool = False,
     ):
         """
         Construct the visualization of the network associated with the Flume system using graphviz.
@@ -144,6 +145,23 @@ class System:
             # Embed the interactive svg into an HTML with the interactive capabilities
             self._create_interactive_html(
                 output_directory=output_directory, svg_filepath=svg_filepath
+            )
+
+        elif consolidated_graph:
+            # Make the consolidated version of the graph visualization
+            graph = self._consolidate_static_graph_network(
+                node_fillcolor="#8CD17D",
+                top_level_fillcolor="#5FB7EA",
+                opacity=0.5,
+                penwidth=3,
+            )
+
+            # Render the graph
+            graph.render(
+                filename=filename,
+                directory=output_directory,
+                cleanup=True,
+                format=format,
             )
 
         else:
@@ -246,6 +264,133 @@ class System:
                                     sub.obj_name,
                                     label=f"{out}",
                                 )
+
+        return graph
+
+    def _consolidate_static_graph_network(
+        self,
+        node_fillcolor: str = None,
+        top_level_fillcolor: str = None,
+        opacity: float = 1.0,
+        penwidth: float = 2.0,
+    ):
+        """
+        Private method that builds a decluttered version of the static graphviz visual.
+
+        Compared to ``_static_graph_network``, this version:
+          * Groups all variables flowing between the same (source, target) pair
+            of analyses into a single edge (no edge labels).
+          * Variable names are stored as a tooltip (visible in SVG/HTML output).
+          * Enables ``concentrate=True`` so graphviz merges shared edge segments.
+          * Renders nodes with rounded corners.
+          * Optionally fills nodes with a hex color code.
+
+        Parameters
+        ----------
+        node_fillcolor : str, optional
+            Hex color code (e.g. ``"#AED6F1"``) used to fill non-top-level
+            analysis nodes. If ``None``, no fill is applied.
+        top_level_fillcolor : str, optional
+            Hex color code (e.g. ``"#F1948A"``) used to fill top-level analysis
+            nodes. If ``None``, defaults to ``node_fillcolor`` when that is set,
+            otherwise no fill is applied.
+        opacity : float, optional
+            Fill opacity from 0.0 (transparent) to 1.0 (fully opaque). Applied
+            to both ``node_fillcolor`` and ``top_level_fillcolor`` by appending
+            an alpha byte to the hex color. Defaults to 1.0.
+
+        Returns
+        -------
+        graph : graphviz.Digraph
+            The consolidated graphviz digraph.
+        """
+
+        # Helper: append alpha byte to a 6-digit hex color (#RRGGBB → #RRGGBBAA)
+        def _apply_opacity(color):
+            if color is None:
+                return None
+            alpha = format(round(opacity * 255), "02X")
+            return (
+                color.rstrip().rstrip(")") + alpha if color.startswith("#") else color
+            )
+
+        # Helper: return fully-opaque version of a hex color (strips any alpha byte)
+        def _border_color(color):
+            if color is None:
+                return None
+            return "#" + color.lstrip("#")[:6]
+
+        node_fillcolor = _apply_opacity(node_fillcolor)
+        top_level_fillcolor = _apply_opacity(top_level_fillcolor)
+
+        # Determine base node style
+        base_node_attrs = {
+            "shape": "box",
+            "style": "rounded",
+            "fontname": "Helvetica",
+            "penwidth": str(penwidth),
+        }
+        if node_fillcolor is not None:
+            base_node_attrs["style"] = "rounded,filled"
+            base_node_attrs["fillcolor"] = node_fillcolor
+            base_node_attrs["color"] = _border_color(node_fillcolor)
+
+        graph = gv.Digraph(
+            name=f"{self.sys_name.upper()}",
+            graph_attr={"rankdir": "LR", "ranksep": "0.7", "concentrate": "true"},
+            node_attr=base_node_attrs,
+        )
+
+        self.nodes = []
+        self.edges = {}
+
+        # Resolve top-level fill: explicit arg > fallback to node_fillcolor > none
+        _top_fill = (
+            top_level_fillcolor if top_level_fillcolor is not None else node_fillcolor
+        )
+
+        for analysis in self.top_level_analysis_list:
+            stack = (
+                analysis.stack if hasattr(analysis, "stack") else analysis._make_stack()
+            )
+
+            if not analysis.connected:
+                analysis.analyze()
+
+            for i, sub in enumerate(stack):
+                if sub not in self.nodes:
+                    self.nodes.append(sub)
+
+                    if sub in self.top_level_analysis_list:
+                        out_str = ", ".join(sub.outputs.keys())
+                        top_attrs = {}
+                        if _top_fill is not None:
+                            top_attrs["style"] = "rounded,filled"
+                            top_attrs["fillcolor"] = _top_fill
+                            top_attrs["color"] = _border_color(_top_fill)
+                        label = f"<<B>{sub.obj_name}</B><BR/><I>Outputs: {out_str}</I>>"
+                        graph.node(
+                            sub.obj_name,
+                            label,
+                            **top_attrs,
+                        )
+                    else:
+                        graph.node(sub.obj_name, f"{sub.obj_name}")
+
+                if i == 0 or not hasattr(sub, "connects"):
+                    continue
+
+                # Group variables by (source, target) pair
+                grouped = {}
+                for out, source in sub.connects.items():
+                    grouped.setdefault((source.obj_name, sub.obj_name), []).append(out)
+
+                for edge_key, labels in grouped.items():
+                    if edge_key in self.edges:
+                        continue
+                    self.edges[edge_key] = labels
+                    tooltip = ", ".join(labels)
+                    graph.edge(*edge_key, tooltip=tooltip, labeltooltip=tooltip)
 
         return graph
 
