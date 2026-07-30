@@ -19,6 +19,7 @@ class System:
         log_name: str = "flume.log",
         log_prefix: str = ".",
         parallel_execution: bool = False,
+        parallel_max_workers: int = 4,
     ):
         """
         Defines a class that wraps multiple analysis objects into a single system, which can then be utilized to perform optimization with one of Flume's optimizer interfaces after declaring design varaibles, an objective function, and (optionally) constraints.
@@ -50,7 +51,8 @@ class System:
             os.mkdir(self.log_prefix)
 
         # Store the attribute for whether parallel execution should be used
-        self.parallel_execution: bool = parallel_execution
+        self.parallel_execution = parallel_execution
+        self.parallel_max_workers = parallel_max_workers
 
         # Configure the file path for the log file
         self.outputs_log = Logger(log_path=self.log_prefix, log_name=self.log_name)
@@ -105,7 +107,51 @@ class System:
 
         return full_analysis_list
 
-    def execute(self):
+    def build_dag(self):
+        """
+        DOCS:
+        """
+
+        from collections import defaultdict
+
+        # Initialize a set to store all of the unique Analysis objects in the DAG
+        nodes = set()
+
+        # Initialize a dictionary of lists, which will store all of the dependencies for each Analysis object
+        dependents = defaultdict(list)
+
+        # Initialize a dictionary, which will store information about how many dependencies remain for each node in the DAG. Used as a trigger for when an Analysis object can begin its execution (after all dependencies have been analyzed)
+        remaining = {}
+
+        # Define the local function to use to trace through the stack and build the DAG
+        def visit(n):
+            # Skip the node if it is already in the set of nodes
+            if n in nodes:
+                return
+
+            # Add the node to the set
+            nodes.add(n)
+
+            # Set the number of dependencies for the current node in the 'remaining' dictionary
+            remaining[n] = len(n.sub_analyses)
+
+            # Loop through the sub-analyses for the current node, add them to the dependents dictionary, and visit each sub-analysis
+            for sub in n.sub_analyses:
+                dependents[sub].append(n)
+                visit(sub)
+
+        # Invoke the 'visit' function for all top-level Analysis objects (nodes) to construct the DAG
+        for t in self.top_level_analysis_list:
+            visit(t)
+
+        # Store the information as attributes
+        self.dag_nodes = nodes
+        self.dag_dependents = dependents
+        self.dag_remaining = remaining
+
+        return
+
+    def execute(self, mode: str = "real", debug_print: bool = False):
         """
         Executes all top-level Analysis objects for the System. Operates in serial or in parallel, depending on the input parameter.
         """
@@ -113,18 +159,110 @@ class System:
         # Get the boolean attribute for whether parallel execution should be used
         parallel_execution = self.parallel_execution
 
+        # Initialize the time it takes to perform the entire forward pass for the DAG
+        self.dag_total_time = 0.0
+
         # Serial path for the System, which sequentially executes the objective and all constraint Analysis objects
         if not parallel_execution:
             # Perform the analysis for the objective function
-            self.obj_analysis.analyze(debug_print=False)
+            self.obj_analysis.analyze(mode=mode, debug_print=debug_print)
+
+            self.dag_total_time += self.obj_analysis.forward_total
 
             # Perform the analysis for all constraint functions
             for con in self.con_info:
-                self.con_info[con]["instance"].analyze(debug_print=False)
+                con_instance = self.con_info[con]["instance"]
+                con_instance.analyze(debug_print=debug_print)
+
+                self.dag_total_time += con_instance.forward_total
 
         else:
-            # parallel execution with dag scheduler
-            pass
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import time
+
+            # Build the information that defines the DAG if it does not already exist
+            if not hasattr(self, "dag_nodes"):
+                self.build_dag()
+
+            # Get the nodes and dependents attributes (static across calls)
+            nodes = self.dag_nodes
+            dependents = self.dag_dependents
+
+            # Create a copy of the dag_remaining dictionary for use in the execution. The original is preserved so it can be accessed for subsequent executions (the copy is modified by decrementing the counters)
+            remaining = self.dag_remaining.copy()
+
+            # Get the maximum number of workers to use
+            max_parallel_workers = self.parallel_max_workers
+
+            # Define the local function that defines the procedures to execute when an Analysis object/node is to be analyzed
+            def perform_node_analysis(analysis_obj: Analysis):
+
+                # Construct/get the connections
+                analysis_obj._connect()
+
+                # Call the private analyze method, timing it along the way
+                start = time.perf_counter()
+                analysis_obj._analyze()
+                analysis_obj.analyzed = True
+                end = time.perf_counter()
+
+                # Compute the time it took to perform the Analysis
+                analysis_time = end - start
+                analysis_obj.analysis_time = analysis_time
+
+                if debug_print:
+                    import threading
+
+                    tname = threading.current_thread().name
+                    tid = threading.get_ident()
+
+                    print(
+                        f"[{tname} tid={tid}] {analysis_obj.obj_name}: "
+                        f"start={start:.6f} end={end:.6f}"
+                    )
+
+            # Serially initialize all Analysis objects
+            for n in nodes:
+                n._initialize_analysis(mode=mode)
+
+            # Construct the initial set of Analysis objects that are ready to be executed (i.e. anything that is a source for the DAG)
+            initial_ready = [n for n in remaining if remaining[n] == 0]
+
+            # Construct the ThreadPoolExecutor and execute all of the Analyses in the System
+            with ThreadPoolExecutor(max_workers=max_parallel_workers) as pool:
+                # Get the Future objects for the nodes that are ready to be evaluated (also starts the Analysis execution with the submit method)
+                futures = {
+                    pool.submit(perform_node_analysis, n): n for n in initial_ready
+                }
+
+                # Execute all Analysis objects until the entire DAG is complete
+                while futures:
+                    # Loop over the list of Future objects as they complete
+                    for future in as_completed(list(futures)):
+                        # Extract the node
+                        node = futures.pop(future)
+
+                        # Extract the data from the future (triggers the end of the perform_node_analysis)
+                        future.result()
+
+                        # Loop through the dependents for the current node
+                        for dep in dependents[node]:
+                            # Decrement the counter for the dependent
+                            remaining[dep] -= 1
+
+                            # Trigger the execution of the next Analysis object if all of its dependent nodes have finished executing
+                            if remaining[dep] == 0:
+                                futures[pool.submit(perform_node_analysis, dep)] = dep
+
+                        break
+
+            # Loop back through the Analysis objects to get the total time for the DAG execution for the forward pass
+            for n in nodes:
+                self.dag_total_time += n.analysis_time
+
+        # Display the total time to execute the forward pass through the DAG, if requested
+        if debug_print:
+            print(f"DAG forward pass performed in {self.dag_total_time} seconds.")
 
         return
 
