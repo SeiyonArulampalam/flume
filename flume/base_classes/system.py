@@ -18,6 +18,7 @@ class System:
         top_level_analysis_list: List[Analysis],
         log_name: str = "flume.log",
         log_prefix: str = ".",
+        parallel_execution: bool = False,
     ):
         """
         Defines a class that wraps multiple analysis objects into a single system, which can then be utilized to perform optimization with one of Flume's optimizer interfaces after declaring design varaibles, an objective function, and (optionally) constraints.
@@ -32,6 +33,7 @@ class System:
             String that defines the name to use for the log file, defaults to 'flume.log'
         log_prefix: str
             String that defines the output directory where the log file and other files are saved, defaults to the current directory '.'
+        TODO: parallel exeuction
         """
 
         # Store the name for the system
@@ -46,6 +48,9 @@ class System:
 
         if not os.path.isdir(self.log_prefix):
             os.mkdir(self.log_prefix)
+
+        # Store the attribute for whether parallel execution should be used
+        self.parallel_execution: bool = parallel_execution
 
         # Configure the file path for the log file
         self.outputs_log = Logger(log_path=self.log_prefix, log_name=self.log_name)
@@ -99,6 +104,31 @@ class System:
                     continue
 
         return full_analysis_list
+
+    def execute(self):
+        """
+        Executes all top-level Analysis objects for the System. Operates in serial or in parallel, depending on the input parameter.
+        """
+
+        # Get the boolean attribute for whether parallel execution should be used
+        parallel_execution = self.parallel_execution
+
+        # Serial path for the System, which sequentially executes the objective and all constraint Analysis objects
+        if not parallel_execution:
+            # Perform the analysis for the objective function
+            self.obj_analysis.analyze(debug_print=False)
+
+            # Perform the analysis for all constraint functions
+            for con in self.con_info:
+                self.con_info[con]["instance"].analyze(debug_print=False)
+
+        else:
+            # parallel execution with dag scheduler
+            pass
+
+        return
+
+    # TODO: def execute_adjoint(self):
 
     def graph_network(
         self,
@@ -457,6 +487,8 @@ class System:
                 # Add the upper bound, if specified
                 if "ub" in global_var_name[key].keys():
                     self.design_vars_info[key]["ub"] = global_var_name[key]["ub"]
+
+                # TODO: add scale here, which can be used
             else:
                 continue
 

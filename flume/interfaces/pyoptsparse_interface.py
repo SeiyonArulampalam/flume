@@ -122,8 +122,8 @@ class FlumePyOptSparseInterface:
         # Set the variable values for the various analyses
         self._set_system_variables(xdict)
 
-        # Perform the analysis for the objective function
-        self.flume_sys.obj_analysis.analyze(debug_print=False)
+        # Execute the required analyses for the System (performs analyses for objective and constraint Analysis objects, and then scaling/assignment happens below)
+        self.flume_sys.execute()
 
         # Extract the objective function output
         self.obj_name = self.flume_sys.obj_local_name
@@ -135,8 +135,6 @@ class FlumePyOptSparseInterface:
 
         # Evaluate the constraint functions
         for con in self.flume_sys.con_info:
-            # Perform the analysis for the current constraint function
-            self.flume_sys.con_info[con]["instance"].analyze(debug_print=False)
 
             # Extract the output for the constraint
             con_name = self.flume_sys.con_info[con]["local_name"]

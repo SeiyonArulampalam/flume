@@ -51,6 +51,9 @@ class FlumeScipyInterface:
         # Set the number of design variables
         self._set_ndvs()
 
+        # Initialize the attribute which will store the most recently seen design variable vector
+        self._last_x = None
+
         return
 
     def _set_ndvs(self):
@@ -206,6 +209,33 @@ class FlumeScipyInterface:
 
         return x0
 
+    def _ensure_executed(self, x):
+        """
+        Private method which ensures that the System has beeen executed for the current design variable vector, x. Returns nothing, but internally will execute the entire system if the design variable vector is updated.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            NumPy array of the current design variable values
+
+        Returns
+        -------
+        None
+        """
+
+        # Execute the System if x is None or is not the same as the previously recorded x
+        if self._last_x is None or not np.array_equal(x, self._last_x):
+            # Set the variable values throughout the System
+            self._set_system_variables(x)
+
+            # Execute all Analyses in the System
+            self.flume_sys.execute()
+
+            # Update the stored design variable vector
+            self._last_x = np.copy(x)
+
+        return
+
     def _objective_func(self, x, method):
         """
         Computes the objective function value for the system using the current values for the design variables, x.
@@ -228,11 +258,8 @@ class FlumeScipyInterface:
                 f"The objective information for the system named '{self.flume_sys.sys_name}' has not yet been declared, so evalObjCon can not be executed. Ensure that the function 'declare_objective' has been called."
             )
 
-        # Set the variable values for the various analyses
-        self._set_system_variables(x)
-
-        # Perform the analysis for the objective function
-        self.flume_sys.obj_analysis.analyze(debug_print=False)
+        # Ensure the System has been executed (and execute if not)
+        self._ensure_executed(x=x)
 
         # Extract the objective function output
         self.obj_name = self.flume_sys.obj_local_name
@@ -268,6 +295,9 @@ class FlumeScipyInterface:
             raise RuntimeError(
                 f"The objective information for the system named '{self.flume_sys.sys_name}' has not yet been declared, so evalObjCon can not be executed. Ensure that the function 'declare_objective' has been called."
             )
+
+        # Ensure the forward analysis has been performed
+        self._ensure_executed(x=x)
 
         # Compute the gradient of the objective function, where the seed value is set to 1.0 for the output of interest
         self.flume_sys.obj_analysis._add_output_seed(outputs=[self.obj_name], seed=1.0)
@@ -413,7 +443,10 @@ class FlumeScipyInterface:
         local_name = con_i_info["local_name"]
 
         # Perform the analysis for the current constraint
-        instance.analyze(debug_print=False)
+        # instance.analyze(debug_print=False)
+
+        # Ensure the System has been executed
+        self._ensure_executed(x=x)
 
         # Extract the constraint value
         con_val = instance.outputs[local_name].value
@@ -500,12 +533,10 @@ class FlumeScipyInterface:
         # Add the output seed
         instance._add_output_seed(outputs=[local_name], seed=seed)
 
-        # Perform the adjoint analysis
-        if self.method == "trust-constr" and not instance.analyzed:
-            instance.analyze()
-        elif not instance.analyzed:
-            instance.analyze()
+        # Ensure that the forward analysis has been executed
+        self._ensure_executed(x=x)
 
+        # Perform the adjoint analysis
         instance.analyze_adjoint(debug_print=False)
 
         # Initialize the constraint Jacobian
