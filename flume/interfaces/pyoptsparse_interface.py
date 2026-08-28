@@ -181,77 +181,44 @@ class FlumePyOptSparseInterface:
         # Initialize the dictionary that will store the gradient information
         grad_vals = {}
 
-        # Compute the gradient of the objective function, where the seed value is set to 1.0 for the output of interest
-        self.flume_sys.obj_analysis._add_output_seed(outputs=[self.obj_name], seed=1.0)
+        # Execute the adjoint procedure for the System
+        self.flume_sys.execute_adjoint(debug_print=False)
+        design_derivs = self.flume_sys.design_derivs
 
-        self.flume_sys.obj_analysis.analyze_adjoint(debug_print=False)
+        # Loop through each sweep ID in the design_derivs dictionary, and set the entries in the grad_vals dictionary
+        for sweep_id in design_derivs:
+            # Extract the global obj/con name and the index
+            global_name = sweep_id[0]
+            index = sweep_id[1]
 
-        # Extract the derivative of the objective wrt the design variables
-        obj_name = self.flume_sys.obj_local_name
-        grad_vals[obj_name] = {}
-        for var in self.flume_sys.design_vars_info:
-            # Extract the local name of the variable
-            local_name = self.flume_sys.design_vars_info[var]["local_name"]
+            # Get the local name for the objective/constraint, which is what is used to index/slice into grad_vals
+            local_name = global_name.split(".")[-1]
 
-            # Extract the derivative for the current design variable
-            gradx_i = (
-                self.flume_sys.design_vars_info[var]["instance"]
-                .variables[local_name]
-                .deriv
-            )
+            # Initialize the sub-dictionary for the current local name's derivatives
+            grad_vals[local_name] = {}
 
-            # Store the gradient info in the dictionary
-            grad_vals[obj_name][var] = gradx_i * self.flume_sys.obj_scale
+            # Loop through the design variables for the sweep ID
+            for var in design_derivs[sweep_id]:
+                # Extract the deriv value
+                deriv_val = design_derivs[sweep_id][var]
 
-        # Loop through the constraints in the System
-        for con in self.flume_sys.con_info:
-            # Extract the local name of the constraint
-            con_name = self.flume_sys.con_info[con]["local_name"]
+                # If the QOI is the objective or a scalar constraint
+                if index == 0:
+                    grad_vals[local_name][var] = deriv_val
 
-            grad_vals[con_name] = {}
+                    if local_name == self.flume_sys.obj_local_name:
+                        grad_vals[local_name][var] *= self.flume_sys.obj_scale
 
-            # Extract the size of the constraint
-            con_size = self.flume_sys.con_info[con]["size"]
+                # If the QOI is a vector-valued constraint
+                elif index > 1:
+                    current = grad_vals[local_name][var]
+                    grad_vals[local_name][var] = np.vstack((current, deriv_val))
 
-            # Extract the RHS for the constraint
-            rhs = self.flume_sys.con_info[con]["rhs"]
-
-            # Loop through by the size of the constraint (each entry in the array is effectively a separate constraint) and evaluate the derivatives
-            for i in range(con_size):
-                # Set the seed for the current constraint
-                if con_size == 1:
-                    seed = 1.0
+                # Raise RuntimeError if this block is reached
                 else:
-                    seed = np.zeros(con_size)
-                    seed[i] = 1.0
-
-                # Add the output seed
-                self.flume_sys.con_info[con]["instance"]._add_output_seed(
-                    outputs=[con_name], seed=seed
-                )
-
-                # Perform the adjoint analysis
-                self.flume_sys.con_info[con]["instance"].analyze_adjoint(
-                    debug_print=False
-                )
-
-                # Loop through the variables in the system
-                for var in self.flume_sys.design_vars_info:
-                    # Extract the derivative value for the current constraint and variable combination
-                    local_var_name = self.flume_sys.design_vars_info[var]["local_name"]
-
-                    gradc_i = (
-                        self.flume_sys.design_vars_info[var]["instance"]
-                        .variables[local_var_name]
-                        .deriv
+                    raise RuntimeError(
+                        f"Index value of '{index}' is invalid for sweep_id = '{sweep_id}'. Should be a non-negative integer."
                     )
-
-                    # Assign the gradient value into the grad_vals dictionary
-                    if i > 0:
-                        current = grad_vals[con_name][var]
-                        grad_vals[con_name][var] = np.vstack((current, gradc_i))
-                    else:
-                        grad_vals[con_name][var] = gradc_i
 
         # Add the profiling information for the current iteration
         self.flume_sys.profile_iteration(self.it_counter - 1)

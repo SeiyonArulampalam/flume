@@ -464,7 +464,7 @@ if __name__ == "__main__":
     print("\nOutputs for serial execution:")
     print(f"\tobj = {obj:.6f}")
     print(f"\tcon = {con:.6f}")
-    print(f"\texecution time = {serial_sys.dag_total_time:.8f} seconds")
+    print(f"\texecution time (wall) = {serial_sys.dag_forward_wall:.8f} seconds")
 
     # Create the flume system
     parallel_sys = System(
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     print("\nOutputs for parallel execution:")
     print(f"\tobj = {obj:.6f}")
     print(f"\tcon = {con:.6f}")
-    print(f"\texecution time = {parallel_sys.dag_total_time:.8f} seconds")
+    print(f"\texecution time (wall) = {parallel_sys.dag_forward_wall:.8f} seconds")
 
-    speedup = parallel_sys.dag_total_time / serial_sys.dag_total_time
+    speedup = serial_sys.dag_forward_wall / parallel_sys.dag_forward_wall
     print(f"speedup = {speedup:.6f}")

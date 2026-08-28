@@ -20,6 +20,7 @@ class System:
         log_prefix: str = ".",
         parallel_execution: bool = False,
         parallel_max_workers: int = 4,
+        track_node_timing: bool = False,
     ):
         """
         Defines a class that wraps multiple analysis objects into a single system, which can then be utilized to perform optimization with one of Flume's optimizer interfaces after declaring design varaibles, an objective function, and (optionally) constraints.
@@ -53,6 +54,12 @@ class System:
         # Store the attribute for whether parallel execution should be used
         self.parallel_execution = parallel_execution
         self.parallel_max_workers = parallel_max_workers
+
+        # Store the attribute for whether per-node timing should be tracked. When
+        # True, each node's individual analysis time is measured/stored (enabling
+        # the summed-CPU and efficiency profile columns and the optional per-node
+        # detail). When False, only the System-level wall-clock time is recorded.
+        self.track_node_timing = track_node_timing
 
         # Configure the file path for the log file
         self.outputs_log = Logger(log_path=self.log_prefix, log_name=self.log_name)
@@ -149,36 +156,71 @@ class System:
         self.dag_dependents = dependents
         self.dag_remaining = remaining
 
+        # Map each top-level analysis (i.e. a sink with no dependent Analyses) to its ancestor set (i.e. its dependencies )
+        self.dag_sink_ancestors = {}
+        for sink in self.top_level_analysis_list:
+            # Define a set for the Analysis objects seen in the adjoint pass
+            seen = set()
+
+            # Append the sink (i.e. the top-level Analysis object) to the stack
+            stack = [sink]
+
+            while stack:
+                # Pop the node off the stack
+                n = stack.pop()
+
+                # If it is already in the set of seen objects, continue
+                if n in seen:
+                    continue
+
+                # Otherwise, add the node to the set
+                seen.add(n)
+
+                # Extend the stack by adding its sub-analyses into the stack
+                stack.extend(n.sub_analyses)
+
+            # Assign the ancestors for the current sink as all of the distinct Analysis objects in the "seen" set
+            self.dag_sink_ancestors[sink] = seen
+
         return
 
     def execute(self, mode: str = "real", debug_print: bool = False):
         """
         Executes all top-level Analysis objects for the System. Operates in serial or in parallel, depending on the input parameter.
         """
+        import time
+
+        # Start the wall-clock timer for the entire forward pass (always measured)
+        wall_start = time.perf_counter()
 
         # Get the boolean attribute for whether parallel execution should be used
         parallel_execution = self.parallel_execution
 
-        # Initialize the time it takes to perform the entire forward pass for the DAG
-        self.dag_total_time = 0.0
+        # Whether to track per-node (and summed-CPU) timing
+        track = self.track_node_timing
+
+        # Summed per-node CPU time for the forward pass. Only meaningful when
+        # per-node timing is tracked; otherwise left as NaN.
+        self.dag_total_time = 0.0 if track else float("nan")
 
         # Serial path for the System, which sequentially executes the objective and all constraint Analysis objects
         if not parallel_execution:
             # Perform the analysis for the objective function
             self.obj_analysis.analyze(mode=mode, debug_print=debug_print)
 
-            self.dag_total_time += self.obj_analysis.forward_total
+            if track:
+                self.dag_total_time += self.obj_analysis.forward_total
 
             # Perform the analysis for all constraint functions
             for con in self.con_info:
                 con_instance = self.con_info[con]["instance"]
                 con_instance.analyze(debug_print=debug_print)
 
-                self.dag_total_time += con_instance.forward_total
+                if track:
+                    self.dag_total_time += con_instance.forward_total
 
         else:
             from concurrent.futures import ThreadPoolExecutor, as_completed
-            import time
 
             # Build the information that defines the DAG if it does not already exist
             if not hasattr(self, "dag_nodes"):
@@ -200,15 +242,19 @@ class System:
                 # Construct/get the connections
                 analysis_obj._connect()
 
-                # Call the private analyze method, timing it along the way
-                start = time.perf_counter()
-                analysis_obj._analyze()
-                analysis_obj.analyzed = True
-                end = time.perf_counter()
+                # Call the private analyze method, timing it per-node only if requested
+                if track:
+                    start = time.perf_counter()
+                    analysis_obj._analyze()
+                    analysis_obj.analyzed = True
+                    end = time.perf_counter()
 
-                # Compute the time it took to perform the Analysis
-                analysis_time = end - start
-                analysis_obj.analysis_time = analysis_time
+                    # Store the time it took to perform this Analysis
+                    analysis_obj.analysis_time = end - start
+                else:
+                    start = end = None
+                    analysis_obj._analyze()
+                    analysis_obj.analyzed = True
 
                 if debug_print:
                     import threading
@@ -216,10 +262,15 @@ class System:
                     tname = threading.current_thread().name
                     tid = threading.get_ident()
 
-                    print(
-                        f"[{tname} tid={tid}] {analysis_obj.obj_name}: "
-                        f"start={start:.6f} end={end:.6f}"
-                    )
+                    if track:
+                        print(
+                            f"[{tname} tid={tid}] {analysis_obj.obj_name}: "
+                            f"start={start:.6f} end={end:.6f}"
+                        )
+                    else:
+                        print(
+                            f"[{tname} tid={tid}] {analysis_obj.obj_name}"
+                        )
 
             # Serially initialize all Analysis objects
             for n in nodes:
@@ -256,17 +307,279 @@ class System:
 
                         break
 
-            # Loop back through the Analysis objects to get the total time for the DAG execution for the forward pass
-            for n in nodes:
-                self.dag_total_time += n.analysis_time
+            # Sum the per-node forward times for the DAG (only if tracking is on)
+            if track:
+                for n in nodes:
+                    self.dag_total_time += n.analysis_time
 
-        # Display the total time to execute the forward pass through the DAG, if requested
+        # Record the wall-clock time for the entire forward pass
+        self.dag_forward_wall = time.perf_counter() - wall_start
+
+        # Display the timing for the forward pass through the DAG, if requested
         if debug_print:
-            print(f"DAG forward pass performed in {self.dag_total_time} seconds.")
+            print(
+                f"DAG forward pass: wall={self.dag_forward_wall:.6f} s, "
+                f"cpu-sum={self.dag_total_time} s"
+            )
 
         return
 
-    # TODO: def execute_adjoint(self):
+    def _collect_sinks_info(self):
+        """
+        DOCS:
+        """
+
+        # Initialize the list that is returned. Each entry in the list is a tuple that contains (sweep_id, sink_analysis_obj, output_names, seed)
+        sinks_info = []
+
+        # Define the dictionary, which specifies the reverse mapping between the sweep ID and the sink analysis object
+        sinks_of_info = {}
+
+        # Get the sink information for the objective
+        obj_sweep_id = (self.global_obj_name, 0)
+        obj_sink_tuple = (
+            obj_sweep_id,  # sweep ID (global_obj_name, index)
+            self.obj_analysis,  # objective Analysis object
+            self.obj_local_name,  # objective local name
+            1.0,  # seed value
+        )
+        sinks_info.append(obj_sink_tuple)
+
+        sinks_of_info[obj_sweep_id] = self.obj_analysis
+
+        # Loop through each object in the top-level Analysis list, which corresponds to all sinks in the DAG
+        for global_con_key in self.con_info:
+            # Extract the information that goes into the tuple for the current sink
+            instance = self.con_info[global_con_key]["instance"]
+            out_local_name = self.con_info[global_con_key]["local_name"]
+
+            # Get the output value and size, which is used for setting seed information
+            con_val = instance.outputs[out_local_name].value
+
+            # Set the seed info and sweep ID name depending on whether the constraint is a scalar or vector
+            if isinstance(con_val, np.ndarray):
+                # Loop over each entry in the constraint vector and populate info
+                for i in range(con_val.size):
+                    # Initialize a zero vector that is the shape of the con_val
+                    seed = np.zeros(con_val.shape)
+
+                    # Set the ith entry to 1
+                    seed.flat[i] = 1.0
+
+                    # Set the name
+                    sweep_id_name = (global_con_key, i)
+
+                    # Set the tuple for the current constraint
+                    sinks_info.append((sweep_id_name, instance, out_local_name, seed))
+            else:
+                # Constraint is a scalar
+                seed = 1.0
+                sweep_id_name = (global_con_key, 0)
+
+                # Set the tuple for the current constraint
+                sinks_info.append((sweep_id_name, instance, out_local_name, seed))
+
+            # Add the entry to the dictionary which maps sweep ID to analysis object
+            sinks_of_info[sweep_id_name] = instance
+
+        return sinks_info, sinks_of_info
+
+    def _extract_dv_derivs(self, sweep_id=None):
+        """
+        Helper method which is used to extract the design derivatives for the current adjoint execution.
+        """
+
+        # Initialize the dictionary that will store the design derivatives for the current sweep ID value
+        sweep_id_derivs = {}
+
+        # Loop through the design variables, and extract the derivative value for the input sweep ID
+        for var in self.design_vars_info:
+            # Get the local name for the current variable
+            local_name = self.design_vars_info[var]["local_name"]
+            instance = self.design_vars_info[var]["instance"]
+
+            # Extract the derivative value for the current variable
+            deriv_val = instance.variables[local_name].get_deriv(sweep_id)
+
+            # Store the derivative value in the dictionary object
+            sweep_id_derivs[var] = deriv_val
+
+        return sweep_id_derivs
+
+    def execute_adjoint(self, debug_print: bool = False):
+        """
+        DOCS:
+        """
+
+        # Get the information for the sweeps that are required (i.e. the total number of quantities of interest, one objective and each constraint)
+        sinks_info, sinks_of_info = self._collect_sinks_info()
+
+        import time
+
+        # Start the wall-clock timer for the entire adjoint pass (always measured)
+        wall_start = time.perf_counter()
+
+        # Whether to track summed-CPU timing
+        track = self.track_node_timing
+
+        # Summed adjoint CPU time (only populated where per-node timing is available)
+        self.dag_adjoint_time = 0.0 if track else float("nan")
+
+        # Initialize the dictionary that stores the derivatives of interest
+        self.design_derivs = {}
+
+        # Extract the parallel execution attribute
+        parallel_execution = self.parallel_execution
+
+        # Serial path for the adjoint analysis of the System, which sequentially executes the objective and all constraint Analysis objects (and serially traces through the stack)
+        if not parallel_execution:
+            # Loop through the sweeps, and execute all of the adjoint paths serially
+            for sweep_id, sink_object, output_names, seed in sinks_info:
+                # Here, _current_sweep is None, which triggers the original, serial execution
+                sink_object._add_output_seed(outputs=output_names, seed=seed)
+
+                # Call the analzye_adjoint method
+                sink_object.analyze_adjoint(debug_print=debug_print)
+
+                # Accumulate the summed adjoint CPU time, if tracking is enabled
+                if track:
+                    self.dag_adjoint_time += sink_object.adjoint_total
+
+                # Extract the derivatives and store them into the dictionary of design derivatives
+                self.design_derivs[sweep_id] = self._extract_dv_derivs(sweep_id=None)
+
+            # Record the wall-clock time for the adjoint pass
+            self.dag_adjoint_wall = time.perf_counter() - wall_start
+
+            return
+        # Parallel path for the adjoint analysis (parallelizes over the top-level Analysis objects and within each sweep)
+        else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from flume.base_classes.state import _current_sweep, sweep_context
+            import threading
+
+            # Construct the DAG info if not done already
+            if not hasattr(self, "dag_nodes"):
+                self.build_dag()
+
+            # Extract the DAG info
+            nodes = self.dag_nodes
+            dependents = self.dag_dependents
+            sink_ancestors = self.dag_sink_ancestors
+
+            # Perform the serial pre-pass to allocate zeroed derivatives for every (State, sweep_id) combo. Also, construct the state locks, which are used to prevent race conditions
+            state_locks = {}
+            for sweep_id, sink_object, output_names, seed in sinks_info:
+                # Loop through each node in a sink's ancestors
+                for node in sink_ancestors[sink_object]:
+                    # Extract all states for the current node's variables and outputs, and ensure they have derivative info for the current sweep ID
+                    for state in list(node.outputs.values()) + list(
+                        node.variables.values()
+                    ):
+                        # Ensures that the State has a zeroed derivative value for the current sweep ID or creates it
+                        state.ensure_sweep_slot(sweep_id)
+
+                        # Set the information for the state lock
+                        state_locks.setdefault(id(state), threading.Lock())
+
+            # Set each sink's seed in its corresonding slot (done serially)
+            for sweep_id, sink_object, output_names, seed in sinks_info:
+                # Use the context manager with the current sweep ID to set the output seed for each sweep ID
+                with sweep_context(sweep_id):
+                    sink_object._add_output_seed(outputs=output_names, seed=seed)
+
+            # Construct the transpose of the "remaining" dictionary created for the forward DAG, which defines the nodes that need to be executed before information can be passed upstream in the adjoint pass
+            remaining_adj = {}
+            for sweep_id, sink_object, _, _ in sinks_info:
+                # Get the ancestors for the current sink object/top-level Analysis object
+                anc = sink_ancestors[sink_object]
+
+                # For each sweep ID, constructs the dictionary of dependencies to trace through the DAG in reverse
+                remaining_adj[sweep_id] = {
+                    n: sum(1 for d in dependents[n] if d in anc) for n in anc
+                }
+
+            # Define the function used to perform the adjoint analysis for a given node
+            def perform_node_adjoint(n, sweep_id):
+                # Set the sweep ID
+                token = _current_sweep.set(sweep_id)
+
+                try:
+                    # Lock the input States this node accumulates into (its variables), which alias upstream outputs shared with sibling consumers
+                    locks = sorted({id(st) for st in n.variables.values()})
+                    for lid in locks:
+                        # Acquire the lock, which locks the State or blocks the thread until it is released
+                        state_locks[lid].acquire()
+                    try:
+                        # Perform the private adjoint analysis for the node
+                        n._analyze_adjoint()
+                    finally:
+                        # Reverse through and unlock any locked locks
+                        for lid in reversed(locks):
+                            state_locks[lid].release()
+                finally:
+                    # Reset the contextvar to the previous value, which is necessary for future use
+                    _current_sweep.reset(token)
+
+            # Setup the scheduler, which is responsible for scheduling all adjoint analyses (in parallel over each quantity of interest, and parralel within a given sweep)
+            with ThreadPoolExecutor(max_workers=self.parallel_max_workers) as pool:
+                futures = {}
+
+                # Loop through all the sweeps
+                for sweep_id, sink_object, _, _ in sinks_info:
+                    # Loop through all nodes and values in the remaining adjoint dictionary
+                    for n, r in remaining_adj[sweep_id].items():
+                        # Execute the perform_node_adjoint function if the number of remaining nodes is zero
+                        if r == 0:
+                            futures[pool.submit(perform_node_adjoint, n, sweep_id)] = (
+                                n,
+                                sweep_id,
+                            )
+
+                # Execute all adjoint analyses until all derivatives computed across the entire DAG for each quantity of interest
+                while futures:
+                    # Loop over the list of Future objects as they complete
+                    for fut in as_completed(list(futures)):
+                        # Extract the node and sweep ID
+                        n, sweep_id = futures.pop(fut)
+
+                        # Extract the data from the future (triggers the end of perform_node_adjoint)
+                        fut.result()
+
+                        # Get the ancestors for the current top-level Analysis object/sink
+                        anc = sink_ancestors[sinks_of_info[sweep_id]]
+
+                        # Loop through the sub-analyses for the current node
+                        for sub in n.sub_analyses:
+                            # Continue if the sub analysis is not in the ancestors list
+                            if sub not in anc:
+                                continue
+
+                            # Decrement the counter for the adjoint tracker
+                            remaining_adj[sweep_id][sub] -= 1
+
+                            # Trigger the execution of the node adjoint for the sub-analysis, if the remaining adjoint counter is zero
+                            if remaining_adj[sweep_id][sub] == 0:
+                                futures[
+                                    pool.submit(perform_node_adjoint, sub, sweep_id)
+                                ] = (sub, sweep_id)
+
+                        break
+
+            # Extract the design derivatives for each sweep
+            for sweep_id, sink, _, _ in sinks_info:
+                self.design_derivs[sweep_id] = self._extract_dv_derivs(
+                    sweep_id=sweep_id
+                )
+
+            # Per-node adjoint CPU time is not tracked in the parallel path yet;
+            # only the wall-clock time is reported for this pass.
+            self.dag_adjoint_time = float("nan")
+
+        # Record the wall-clock time for the adjoint pass
+        self.dag_adjoint_wall = time.perf_counter() - wall_start
+
+        return
 
     def graph_network(
         self,
@@ -651,6 +964,7 @@ class System:
         """
 
         # Using the provided objective name, store the associated analysis object and the local variable name
+        self.global_obj_name = global_obj_name
         obj_analysis_name, self.obj_local_name = global_obj_name.split(".")
 
         # Store the objective scale
@@ -980,24 +1294,74 @@ class System:
             Current iteration number
         """
 
-        # Log the analysis object names if the current iteration number is divisible by 10
+        # Gather the System-level timing metrics captured by execute()/execute_adjoint().
+        # Missing attributes (e.g. a pass that has not run yet) are reported as NaN.
+        fwd_wall = getattr(self, "dag_forward_wall", float("nan"))
+        fwd_cpu = getattr(self, "dag_total_time", float("nan"))
+        adj_wall = getattr(self, "dag_adjoint_wall", float("nan"))
+        adj_cpu = getattr(self, "dag_adjoint_time", float("nan"))
+
+        def _eff(cpu, wall):
+            # Summed node CPU time / wall time ~ effective concurrency (1.0 == serial).
+            # NaN when either value is unavailable (cpu-sum requires track_node_timing).
+            if wall == wall and wall > 0 and cpu == cpu:
+                return cpu / wall
+            return float("nan")
+
+        # Log the header and the execution mode every 10 iterations
         if iter_number % 10 == 0:
-            # Log the header for the iter number and each analysis object name in the stack
-            self.profile_log.log("\n%5s" % ("iter"), end="")
-
-            for analysis in self.top_level_analysis_list:
-                self.profile_log.log(
-                    "%20s %20s"
-                    % (analysis.obj_name + ": fwd", analysis.obj_name + ": adj"),
-                    end="",
-                )
-
-        self.profile_log.log("\n%5d" % iter_number, end="")
-
-        for analysis in self.top_level_analysis_list:
+            mode = "parallel" if self.parallel_execution else "serial"
             self.profile_log.log(
-                "%20.6f %20.6f" % (analysis.forward_total, analysis.adjoint_total),
+                "\n# mode: %s, max_workers: %s, track_node_timing: %s"
+                % (
+                    mode,
+                    getattr(self, "parallel_max_workers", "-"),
+                    getattr(self, "track_node_timing", False),
+                ),
                 end="",
             )
+            self.profile_log.log(
+                "\n%5s%14s%14s%12s%14s%14s%12s"
+                % (
+                    "iter",
+                    "fwd_wall",
+                    "fwd_cpu",
+                    "fwd_eff",
+                    "adj_wall",
+                    "adj_cpu",
+                    "adj_eff",
+                ),
+                end="",
+            )
+
+        # Log the System-level timing row for the current iteration
+        self.profile_log.log(
+            "\n%5d%14.6f%14.6f%12.2f%14.6f%14.6f%12.2f"
+            % (
+                iter_number,
+                fwd_wall,
+                fwd_cpu,
+                _eff(fwd_cpu, fwd_wall),
+                adj_wall,
+                adj_cpu,
+                _eff(adj_cpu, adj_wall),
+            ),
+            end="",
+        )
+
+        # Optionally log a per-node forward-time breakdown when per-node timing is
+        # tracked. Uses the unique DAG nodes so shared sub-analyses are not double
+        # counted (unlike a per-top-level breakdown).
+        if getattr(self, "track_node_timing", False) and hasattr(self, "dag_nodes"):
+            for n in sorted(
+                self.dag_nodes,
+                key=lambda a: getattr(a, "analysis_time", 0.0),
+                reverse=True,
+            ):
+                self.profile_log.log(
+                    "\n    %-28s fwd=%12.6f"
+                    % (n.obj_name, getattr(n, "analysis_time", float("nan"))),
+                    end="",
+                )
 
         return
