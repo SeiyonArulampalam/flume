@@ -21,6 +21,10 @@ class TestUnconstrainedRosenbrock(unittest.TestCase):
     Tests the implementation of the optimization of the unconstrained Rosenbrock function using the FlumeScipyInterface.
     """
 
+    # Execution mode for the System (overridden by the parallel subclass below)
+    parallel_execution = False
+    dir_suffix = ""
+
     def setUp(self):
         # Construct the analysis object for the Rosenbrock function
         a = 1.0
@@ -35,7 +39,8 @@ class TestUnconstrainedRosenbrock(unittest.TestCase):
             sys_name="rosen_sys",
             top_level_analysis_list=[rosenbrock],
             log_name="flume.log",
-            log_prefix="tests/rosenbrock_unconstrained",
+            log_prefix="tests/rosenbrock_unconstrained" + self.dir_suffix,
+            parallel_execution=self.parallel_execution,
         )
 
         # Declare the design variables for the system
@@ -87,6 +92,10 @@ class TestConstrainedRosenbrock(unittest.TestCase):
     Tests the implementation of the optimization of the constrained Rosenbrock function using the FlumeScipyInterface.
     """
 
+    # Execution mode for the System (overridden by the parallel subclass below)
+    parallel_execution = False
+    dir_suffix = ""
+
     def setUp(self):
 
         # Construct the design variables object
@@ -110,7 +119,8 @@ class TestConstrainedRosenbrock(unittest.TestCase):
             sys_name="rosen_sys_con",
             top_level_analysis_list=[rosenbrock, rosenbrock_con],
             log_name="flume.log",
-            log_prefix="tests/rosenbrock_constrained",
+            log_prefix="tests/rosenbrock_constrained" + self.dir_suffix,
+            parallel_execution=self.parallel_execution,
         )
 
         # Declare the design variables for the system
@@ -168,6 +178,10 @@ class TestThomsonProblem(unittest.TestCase):
     Tests the optimization of the Thomson problem using the FlumeSciPy interface. Here, the check is that the objective function value at the optimized point matches the value for the known, exact solutions within a relative error tolerance of 1e-3.
     """
 
+    # Execution mode for the System (overridden by the parallel subclass below)
+    parallel_execution = False
+    dir_suffix = ""
+
     def construct_system(self, n_p):
 
         # Construct the analysis objects for the system
@@ -182,7 +196,8 @@ class TestThomsonProblem(unittest.TestCase):
             sys_name="thomson_problem",
             top_level_analysis_list=[energy, cons],
             log_name=f"flume_{n_p}.log",
-            log_prefix="tests/thomson_problem",
+            log_prefix="tests/thomson_problem" + self.dir_suffix,
+            parallel_execution=self.parallel_execution,
         )
 
         # Declare the design variables for the system
@@ -306,3 +321,35 @@ class TestThomsonProblem(unittest.TestCase):
         )
 
         return
+
+
+# ---------------------------------------------------------------------------
+# Parallel-execution variants. These reuse the exact same problems and test
+# methods as the serial classes above, but run the System with
+# parallel_execution=True and write their output files to '<dir>_parallel'.
+# ---------------------------------------------------------------------------
+
+
+class TestUnconstrainedRosenbrockParallel(TestUnconstrainedRosenbrock):
+    """Parallel-execution variant of TestUnconstrainedRosenbrock."""
+
+    parallel_execution = True
+    dir_suffix = "_parallel"
+
+
+class TestConstrainedRosenbrockParallel(TestConstrainedRosenbrock):
+    """Parallel-execution variant of TestConstrainedRosenbrock."""
+
+    parallel_execution = True
+    dir_suffix = "_parallel"
+
+
+class TestThomsonProblemParallel(TestThomsonProblem):
+    """Parallel-execution variant of TestThomsonProblem."""
+
+    parallel_execution = True
+    dir_suffix = "_parallel"
+
+
+if __name__ == "__main__":
+    unittest.main()
