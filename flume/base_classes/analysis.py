@@ -521,9 +521,9 @@ class Analysis:
         init_seen = set()
         for analysis in self.stack:
             if analysis not in init_seen:
-                initialize_start = time.time()
+                initialize_start = time.perf_counter()
                 analysis._initialize_analysis(mode=mode)
-                initialize_end = time.time()
+                initialize_end = time.perf_counter()
 
                 if debug_print:
                     print(
@@ -547,10 +547,10 @@ class Analysis:
 
             # Perform the analysis for each object in the stack
             if not analysis.analyzed:
-                start = time.time()
+                start = time.perf_counter()
                 analysis._analyze()
                 analysis.analyzed = True
-                end = time.time()
+                end = time.perf_counter()
 
                 analysis_time = end - start
                 analysis.forward_profile = analysis_time
@@ -559,7 +559,7 @@ class Analysis:
                 self.forward_total += analysis_time
                 if debug_print:
                     print(
-                        f"Analysis performed for '{analysis.obj_name}' in {analysis_time} seconds."
+                        f"Analysis performed for '{analysis.obj_name}' in {analysis_time:.8f} seconds."
                     )
 
         return
@@ -617,10 +617,10 @@ class Analysis:
         self.adjoint_total = 0.0
         for analysis in self.forward_stack[::-1]:
 
-            start = time.time()
+            start = time.perf_counter()
             analysis._analyze_adjoint()
             analysis.adjoint_analysed = True
-            end = time.time()
+            end = time.perf_counter()
 
             adjoint_time = end - start
             analysis.adjoint_profile = adjoint_time

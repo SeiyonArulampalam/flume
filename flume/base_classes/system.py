@@ -116,7 +116,12 @@ class System:
 
     def build_dag(self):
         """
-        DOCS:
+        Method to construct the directed acyclic graph for the System. Utilizes the nodes defined as the top-level Analysis objects and their sub-analyses to construct the DAG strucutre. Creates attributes which define the following:
+
+        self.dag_nodes : a set for all unique nodes in the DAG
+        self.dag_dependents : a dictionary which specifies the children/dependents for each node in the DAG
+        self.dag_remaining : a dictionary that specifies the number of remaining nodes that need to be analzed before a given node can be analyzed (i.e. number of unanalyzed ancestors for each node)
+        self.dag_sink_ancestors : a dictionary that defines the reverse mapping, where each node is mapped to its ancestors (opposite of self.dag_dependents)
         """
 
         from collections import defaultdict
@@ -324,7 +329,14 @@ class System:
 
     def _collect_sinks_info(self):
         """
-        DOCS:
+        Helper method which is used to collect the information for all sinks in the DAG (i.e. top-level Analysis objects) and the reverse mapping.
+
+        Returns
+        -------
+        sinks_info : list
+            List of tuples for each sink/top-level Analysis object in the DAG. Each tuple stores the (sweep_id, sink_analysis_object, output_names, seed_value)
+        sinks_of_info : list
+            Dictionary that is used to reverse map each sweep ID name to its corresponding Analysis object instance
         """
 
         # Initialize the list that is returned. Each entry in the list is a tuple that contains (sweep_id, sink_analysis_obj, output_names, seed)
@@ -409,7 +421,7 @@ class System:
 
     def execute_adjoint(self, debug_print: bool = False):
         """
-        DOCS:
+        Executes the adjoint analysis for the System. Operates in serial or in parallel, depending on the boolean attribute for parallel execution. If executing in parallel, makes use of ThreadPoolExecutor to sweep over adjoint analyses for each output of interest (i.e. objective or constraints) in parallel, known as a sweep in code. Within a given sweep, also uses ancestor dictionary to execute adjoint analyses in parallel as soon as all of a nodes dependents have completed their respective adjoint analyses. Thus, leverages two forms of parallelism here. Note that locks are used for the _analyze_adjoint method to prevent instances when two sweeps attempt to call this method at the same time.
         """
 
         # Get the information for the sweeps that are required (i.e. the total number of quantities of interest, one objective and each constraint)
@@ -456,7 +468,11 @@ class System:
         # Parallel path for the adjoint analysis (parallelizes over the top-level Analysis objects and within each sweep)
         else:
             from concurrent.futures import ThreadPoolExecutor, as_completed
-            from flume.base_classes.state import _current_sweep, sweep_context
+            from flume.base_classes.state import (
+                _current_sweep,
+                _current_writer,
+                sweep_context,
+            )
             import threading
 
             # Construct the DAG info if not done already
@@ -468,20 +484,29 @@ class System:
             dependents = self.dag_dependents
             sink_ancestors = self.dag_sink_ancestors
 
-            # Perform the serial pre-pass to allocate zeroed derivatives for every (State, sweep_id) combo. Also, construct the state locks, which are used to prevent race conditions
-            state_locks = {}
+            # Serial pre-pass: for every (node, sweep) in each sink's subgraph, create the canonical (zeroed) slot and the node's private per-writer contribution buffer for each of its variables and outputs. Parallel phase only mutates existing values
+            adjoint_nodes = set()
             for sweep_id, sink_object, output_names, seed in sinks_info:
-                # Loop through each node in a sink's ancestors
+                # Loop through all nodes in the ancestors list for each sink object
                 for node in sink_ancestors[sink_object]:
-                    # Extract all states for the current node's variables and outputs, and ensure they have derivative info for the current sweep ID
+
+                    # Add the node to the set
+                    adjoint_nodes.add(node)
+
+                    # Loop through all output/variable State objects for the node
                     for state in list(node.outputs.values()) + list(
                         node.variables.values()
                     ):
-                        # Ensures that the State has a zeroed derivative value for the current sweep ID or creates it
+                        # Canonical slot for this sweep (zeroed)
                         state.ensure_sweep_slot(sweep_id)
 
-                        # Set the information for the state lock
-                        state_locks.setdefault(id(state), threading.Lock())
+                        # This node's private contribution buffer for this sweep
+                        state.prepare_writer_slot(sweep_id, id(node))
+
+            # Create one adjoint lock per Analysis object. This guards _analyze_adjoint so the same node object cannot execute its adjoint concurrently from two sweeps (which would race on any instance attributes the method mutates)
+            for node in adjoint_nodes:
+                # Create the adjoint locks for each node in the adjoint nodes set
+                node._adjoint_lock = threading.Lock()
 
             # Set each sink's seed in its corresonding slot (done serially)
             for sweep_id, sink_object, output_names, seed in sinks_info:
@@ -502,25 +527,19 @@ class System:
 
             # Define the function used to perform the adjoint analysis for a given node
             def perform_node_adjoint(n, sweep_id):
-                # Set the sweep ID
-                token = _current_sweep.set(sweep_id)
+                # Seed reduction (lock-free, sweep-isolated): fill this node's private read-buffer for each of its outputs with the total incoming adjoint (canonical seed + sum of all consumer contribution buffers)
+                for out_state in n.outputs.values():
+                    out_state.reduce_seed(sweep_id, id(n))
 
+                # Run the user adjoint with the sweep and writer context set, so that all derivative reads/writes route to this node's private (sweep, id(n)) buffers
+                token_s = _current_sweep.set(sweep_id)
+                token_w = _current_writer.set(id(n))
                 try:
-                    # Lock the input States this node accumulates into (its variables), which alias upstream outputs shared with sibling consumers
-                    locks = sorted({id(st) for st in n.variables.values()})
-                    for lid in locks:
-                        # Acquire the lock, which locks the State or blocks the thread until it is released
-                        state_locks[lid].acquire()
-                    try:
-                        # Perform the private adjoint analysis for the node
+                    with n._adjoint_lock:
                         n._analyze_adjoint()
-                    finally:
-                        # Reverse through and unlock any locked locks
-                        for lid in reversed(locks):
-                            state_locks[lid].release()
                 finally:
-                    # Reset the contextvar to the previous value, which is necessary for future use
-                    _current_sweep.reset(token)
+                    _current_writer.reset(token_w)
+                    _current_sweep.reset(token_s)
 
             # Setup the scheduler, which is responsible for scheduling all adjoint analyses (in parallel over each quantity of interest, and parralel within a given sweep)
             with ThreadPoolExecutor(max_workers=self.parallel_max_workers) as pool:
@@ -567,8 +586,13 @@ class System:
 
                         break
 
-            # Extract the design derivatives for each sweep
+            # Extract the design derivatives for each sweep. Before extracting, reduce each design-variable State's per-writer contribution buffers into its canonical slot so that _extract_dv_derivs returns the total accumulated gradient for that sweep
             for sweep_id, sink, _, _ in sinks_info:
+                for var in self.design_vars_info:
+                    instance = self.design_vars_info[var]["instance"]
+                    local_name = self.design_vars_info[var]["local_name"]
+                    instance.variables[local_name].reduce_to_canonical(sweep_id)
+
                 self.design_derivs[sweep_id] = self._extract_dv_derivs(
                     sweep_id=sweep_id
                 )
