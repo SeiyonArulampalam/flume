@@ -185,40 +185,34 @@ class FlumePyOptSparseInterface:
         self.flume_sys.execute_adjoint(debug_print=False)
         design_derivs = self.flume_sys.design_derivs
 
-        # Loop through each sweep ID in the design_derivs dictionary, and set the entries in the grad_vals dictionary
-        for sweep_id in design_derivs:
-            # Extract the global obj/con name and the index
-            global_name = sweep_id[0]
-            index = sweep_id[1]
+        # --- Objective: a single scalar sweep (global_obj_name, 0) ---
+        # Extract the name and sweep ID of the objective
+        obj_local = self.flume_sys.obj_local_name
+        obj_sweep_id = (self.flume_sys.global_obj_name, 0)
 
-            # Get the local name for the objective/constraint, which is what is used to index/slice into grad_vals
-            local_name = global_name.split(".")[-1]
+        grad_vals[obj_local] = {}
+        # Loop through the design variables, extract, and assign the derivative information
+        for var in design_derivs[obj_sweep_id]:
+            grad_vals[obj_local][var] = (
+                design_derivs[obj_sweep_id][var] * self.flume_sys.obj_scale
+            )
 
-            # Initialize the sub-dictionary for the current local name's derivatives
+        # --- Constraints: assemble each Jacobian by its size, indexing components ---
+        # Loop through each constraint in the system
+        for con in self.flume_sys.con_info:
+            # Get the local constraint name and the size of the constraint vector
+            local_name = self.flume_sys.con_info[con]["local_name"]
+            con_size = self.flume_sys.con_info[con]["size"]
+
             grad_vals[local_name] = {}
-
-            # Loop through the design variables for the sweep ID
-            for var in design_derivs[sweep_id]:
-                # Extract the deriv value
-                deriv_val = design_derivs[sweep_id][var]
-
-                # If the QOI is the objective or a scalar constraint
-                if index == 0:
-                    grad_vals[local_name][var] = deriv_val
-
-                    if local_name == self.flume_sys.obj_local_name:
-                        grad_vals[local_name][var] *= self.flume_sys.obj_scale
-
-                # If the QOI is a vector-valued constraint
-                elif index > 1:
-                    current = grad_vals[local_name][var]
-                    grad_vals[local_name][var] = np.vstack((current, deriv_val))
-
-                # Raise RuntimeError if this block is reached
-                else:
-                    raise RuntimeError(
-                        f"Index value of '{index}' is invalid for sweep_id = '{sweep_id}'. Should be a non-negative integer."
-                    )
+            # Loop through the design variables
+            for var in self.flume_sys.design_vars_info:
+                # Get the portion of the constraint Jacobian for the current constraint
+                rows = [
+                    np.atleast_1d(np.asarray(design_derivs[(con, i)][var], dtype=float))
+                    for i in range(con_size)
+                ]
+                grad_vals[local_name][var] = np.vstack(rows)  # shape (con_size, n_vars)
 
         # Add the profiling information for the current iteration
         self.flume_sys.profile_iteration(self.it_counter - 1)

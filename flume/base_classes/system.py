@@ -268,9 +268,7 @@ class System:
                             f"start={start:.6f} end={end:.6f}"
                         )
                     else:
-                        print(
-                            f"[{tname} tid={tid}] {analysis_obj.obj_name}"
-                        )
+                        print(f"[{tname} tid={tid}] {analysis_obj.obj_name}")
 
             # Serially initialize all Analysis objects
             for n in nodes:
@@ -371,6 +369,9 @@ class System:
 
                     # Set the tuple for the current constraint
                     sinks_info.append((sweep_id_name, instance, out_local_name, seed))
+
+                    # Add the entry to the dictionary which maps sweep ID to analysis object
+                    sinks_of_info[sweep_id_name] = instance
             else:
                 # Constraint is a scalar
                 seed = 1.0
@@ -379,8 +380,8 @@ class System:
                 # Set the tuple for the current constraint
                 sinks_info.append((sweep_id_name, instance, out_local_name, seed))
 
-            # Add the entry to the dictionary which maps sweep ID to analysis object
-            sinks_of_info[sweep_id_name] = instance
+                # Add the entry to the dictionary which maps sweep ID to analysis object
+                sinks_of_info[sweep_id_name] = instance
 
         return sinks_info, sinks_of_info
 
@@ -436,7 +437,7 @@ class System:
             # Loop through the sweeps, and execute all of the adjoint paths serially
             for sweep_id, sink_object, output_names, seed in sinks_info:
                 # Here, _current_sweep is None, which triggers the original, serial execution
-                sink_object._add_output_seed(outputs=output_names, seed=seed)
+                sink_object._add_output_seed(outputs=[output_names], seed=seed)
 
                 # Call the analzye_adjoint method
                 sink_object.analyze_adjoint(debug_print=debug_print)
@@ -486,7 +487,7 @@ class System:
             for sweep_id, sink_object, output_names, seed in sinks_info:
                 # Use the context manager with the current sweep ID to set the output seed for each sweep ID
                 with sweep_context(sweep_id):
-                    sink_object._add_output_seed(outputs=output_names, seed=seed)
+                    sink_object._add_output_seed(outputs=[output_names], seed=seed)
 
             # Construct the transpose of the "remaining" dictionary created for the forward DAG, which defines the nodes that need to be executed before information can be passed upstream in the adjoint pass
             remaining_adj = {}
