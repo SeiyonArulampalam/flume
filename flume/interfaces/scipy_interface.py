@@ -54,6 +54,9 @@ class FlumeScipyInterface:
         # Initialize the attribute which will store the most recently seen design variable vector
         self._last_x = None
 
+        # Initialize the attribute which will store the design variable vector for which the adjoint (design derivatives) was most recently computed
+        self._adjoint_x = None
+
         return
 
     def _set_ndvs(self):
@@ -236,6 +239,33 @@ class FlumeScipyInterface:
 
         return
 
+    def _ensure_adjoint(self, x):
+        """
+        Private method which ensures that the adjoint (i.e. the design derivatives)
+        has been computed for the current design variable vector, x. The forward
+        pass is ensured first, and then the adjoint procedure for the entire System
+        is executed once per unique design point (computing all sweeps at once).
+
+        Parameters
+        ----------
+        x : np.ndarray
+            NumPy array of the current design variable values
+
+        Returns
+        -------
+        None
+        """
+
+        # Ensure the forward analysis is current at x
+        self._ensure_executed(x=x)
+
+        # Execute the adjoint once per unique design point
+        if self._adjoint_x is None or not np.array_equal(x, self._adjoint_x):
+            self.flume_sys.execute_adjoint(debug_print=False)
+            self._adjoint_x = np.copy(x)
+
+        return
+
     def _objective_func(self, x, method):
         """
         Computes the objective function value for the system using the current values for the design variables, x.
@@ -296,13 +326,12 @@ class FlumeScipyInterface:
                 f"The objective information for the system named '{self.flume_sys.sys_name}' has not yet been declared, so evalObjCon can not be executed. Ensure that the function 'declare_objective' has been called."
             )
 
-        # Ensure the forward analysis has been performed
-        self._ensure_executed(x=x)
+        # Ensure the adjoint (design derivatives) has been computed at x
+        self._ensure_adjoint(x=x)
+        design_derivs = self.flume_sys.design_derivs
 
-        # Compute the gradient of the objective function, where the seed value is set to 1.0 for the output of interest
-        self.flume_sys.obj_analysis._add_output_seed(outputs=[self.obj_name], seed=1.0)
-
-        self.flume_sys.obj_analysis.analyze_adjoint(debug_print=False)
+        # The objective sweep ID is (global_obj_name, 0)
+        obj_sweep_id = (self.flume_sys.global_obj_name, 0)
 
         # Initialize the gradient vector according to the number of design vars
         g = np.zeros(self.ndvs)
@@ -313,18 +342,8 @@ class FlumeScipyInterface:
             start = self.indices[var]["start"]
             end = self.indices[var]["end"]
 
-            # Extract the local name of the variable
-            local_name = self.flume_sys.design_vars_info[var]["local_name"]
-
-            # Extract the derivative for the current design variable
-            gradx_i = (
-                self.flume_sys.design_vars_info[var]["instance"]
-                .variables[local_name]
-                .deriv
-            )
-
-            # Assign the gradient
-            g[start:end] = gradx_i * self.flume_sys.obj_scale
+            # Assign the gradient (applying the objective scale)
+            g[start:end] = design_derivs[obj_sweep_id][var] * self.flume_sys.obj_scale
 
         return g
 
@@ -378,9 +397,13 @@ class FlumeScipyInterface:
             # Construct a lambda function for the constraint wrapper
             con_func = lambda x, _info=con_i_info: self._constraint_wrapper(x, _info)
 
-            # Construct a lambda function for the constraint Jacobian wrapper
-            con_jac_func = lambda x, _info=con_i_info: self._constraint_jac_wrapper(
-                x, _info
+            # Construct a lambda function for the constraint Jacobian wrapper. The
+            # global constraint key is threaded through so the wrapper can index the
+            # per-component design derivatives (sweep IDs are (global_key, index)).
+            con_jac_func = (
+                lambda x, _info=con_i_info, _key=con: self._constraint_jac_wrapper(
+                    x, _info, _key
+                )
             )
 
             # Add the constraint
@@ -396,8 +419,8 @@ class FlumeScipyInterface:
                             "fun": lambda x, _info=con_i_info: -self._constraint_wrapper(
                                 x, _info
                             ),
-                            "jac": lambda x, _info=con_i_info: -self._constraint_jac_wrapper(
-                                x, _info
+                            "jac": lambda x, _info=con_i_info, _key=con: -self._constraint_jac_wrapper(
+                                x, _info, _key
                             ),
                         }
                     )
@@ -492,7 +515,7 @@ class FlumeScipyInterface:
 
         return con_val
 
-    def _constraint_jac_wrapper(self, x, con_i_info: dict):
+    def _constraint_jac_wrapper(self, x, con_i_info: dict, global_key):
         """
         Function that is used to wrap the Jacobian of the constraints into a callable form that SciPy expects.
 
@@ -502,11 +525,13 @@ class FlumeScipyInterface:
             NumPy array of the current design variable values
         con_i_info: dict
             Dictionary that contains the instance, direction, right-hand side, and local name info for the current constraint. This information is provided by the user when declaring constraints for the Flume System.
+        global_key : str
+            The global name (con_info key) for the constraint. Used to index the per-component design derivatives, whose sweep IDs are (global_key, component_index).
 
         Returns
         -------
-        jac : float or np.ndarray
-            The constraint Jacobian evaluated at the current design point.
+        jac : np.ndarray
+            The constraint Jacobian evaluated at the current design point, with shape (con_size, n_dvs). Each row corresponds to a scalar component of the (possibly vector-valued) constraint.
         """
 
         # Extract the instance, direction, and rhs value associated with the constraint
@@ -515,85 +540,77 @@ class FlumeScipyInterface:
         rhs = con_i_info["rhs"]
         local_name = con_i_info["local_name"]
 
-        # Get the value for the constraint
-        con_val = instance.outputs[local_name].value
+        # Ensure the adjoint (design derivatives) has been computed at x
+        self._ensure_adjoint(x=x)
+        design_derivs = self.flume_sys.design_derivs
 
-        # Set the seed for the current constraint
-        if isinstance(con_val, float):
-            seed = 1.0
-            con_size = 1
-        elif isinstance(con_val, np.ndarray):
-            seed = np.ones_like(con_val)
+        # Determine the size of the constraint from the forward output
+        con_val = instance.outputs[local_name].value
+        if isinstance(con_val, np.ndarray):
             con_size = con_val.size
         else:
-            raise RuntimeError(
-                f"The type for the constraint value '{local_name}' is not a float or NumPy array, which is unexpected behavior."
-            )
+            con_size = 1
 
-        # Add the output seed
-        instance._add_output_seed(outputs=[local_name], seed=seed)
-
-        # Ensure that the forward analysis has been executed
-        self._ensure_executed(x=x)
-
-        # Perform the adjoint analysis
-        instance.analyze_adjoint(debug_print=False)
-
-        # Initialize the constraint Jacobian
+        # Initialize the constraint Jacobian (one row per scalar constraint component)
         jac = np.zeros((con_size, x.size))
 
-        # Loop through the variables in the system
-        for var in self.flume_sys.design_vars_info:
-            # Get the indices for the current variable
-            start = self.indices[var]["start"]
-            end = self.indices[var]["end"]
+        # Assemble each component's row of the Jacobian. A vector-valued constraint
+        # of size N corresponds to N scalar constraints, each with its own sweep ID
+        # (global_key, i) in the design derivatives.
+        for i in range(con_size):
+            con_sweep_id = (global_key, i)
 
-            # Extract the derivative value for the current constraint and variable combination
-            local_var_name = self.flume_sys.design_vars_info[var]["local_name"]
-            gradc_i = (
-                self.flume_sys.design_vars_info[var]["instance"]
-                .variables[local_var_name]
-                .deriv
-            )
+            # Loop through the variables in the system
+            for var in self.flume_sys.design_vars_info:
+                # Get the indices for the current variable
+                start = self.indices[var]["start"]
+                end = self.indices[var]["end"]
 
-            # Modify the constraint gradient, accounting for scaling, when necessary
-            if direction == "geq":
-                # If rhs is not 0.0, scale the constraint
-                if rhs != 0.0:
-                    gradc_i /= rhs
+                # Extract the derivative for the current constraint component and variable
+                gradc_i = design_derivs[con_sweep_id][var]
 
-                # If the rhs is < 0, flip the sign
-                if rhs < 0.0:
-                    gradc_i *= -1.0
+                # Copy arrays so the in-place scaling below does not mutate the stored derivatives
+                if isinstance(gradc_i, np.ndarray):
+                    gradc_i = gradc_i.copy()
 
-            elif direction == "leq":
-                # If rhs is not 0.0, scale the constraint
-                if rhs != 0.0:
-                    gradc_i /= -rhs
+                # Modify the constraint gradient, accounting for scaling, when necessary
+                if direction == "geq":
+                    # If rhs is not 0.0, scale the constraint
+                    if rhs != 0.0:
+                        gradc_i /= rhs
+
+                    # If the rhs is < 0, flip the sign
+                    if rhs < 0.0:
+                        gradc_i *= -1.0
+
+                elif direction == "leq":
+                    # If rhs is not 0.0, scale the constraint
+                    if rhs != 0.0:
+                        gradc_i /= -rhs
+                    else:
+                        # This step is necessary only for 'leq' to convert the constraint to the proper form, c(x) >= 0.0
+                        gradc_i *= -1.0
+
+                    # If the rhs is < 0, flip the sign for the constraint
+                    if rhs < 0.0:
+                        gradc_i *= -1.0
+
+                elif direction == "both":
+                    # If rhs is not 0.0, scale the constraint
+                    if rhs != 0.0:
+                        gradc_i /= rhs
+
+                    # If the rhs is < 0, flip the sign for the constraint
+                    if rhs < 0.0:
+                        gradc_i *= -1.0
+
                 else:
-                    # This step is necessary only for 'leq' to convert the constraint to the proper form, c(x) >= 0.0
-                    gradc_i *= -1.0
+                    raise RuntimeError(
+                        "Constraint direction must be 'geq', 'leq', or 'both'."
+                    )
 
-                # If the rhs is < 0, flip the sign for the constraint
-                if rhs < 0.0:
-                    gradc_i *= -1.0
-
-            elif direction == "both":
-                # If rhs is not 0.0, scale the constraint
-                if rhs != 0.0:
-                    gradc_i /= rhs
-
-                # If the rhs is < 0, flip the sign for the constraint
-                if rhs < 0.0:
-                    gradc_i *= -1.0
-
-            else:
-                raise RuntimeError(
-                    "Constraint direction must be 'geq', 'leq', or 'both'."
-                )
-
-            # Assign the value of gradc_i to the Jacobian
-            jac[:, start:end] = gradc_i
+                # Assign this component's row of the Jacobian for the current variable
+                jac[i, start:end] = gradc_i
 
         return jac
 
