@@ -12,3 +12,4 @@ tests/thomson_problem*/
 docs/_build/
 dist/*
 .vscode/
+tests/cantilever_beam*/
