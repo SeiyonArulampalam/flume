@@ -526,6 +526,16 @@ class System:
                 }
 
             # Define the function used to perform the adjoint analysis for a given node
+            # Per-node adjoint timing (only when tracking is enabled). A single node
+            # may run its adjoint once per sweep, so times are accumulated. The lock
+            # guards the shared summed-CPU accumulator and each node's adjoint_time
+            # against concurrent updates from different sweeps.
+            if track:
+                self.dag_adjoint_time = 0.0
+                for node in adjoint_nodes:
+                    node.adjoint_time = 0.0
+                _adjoint_time_lock = threading.Lock()
+
             def perform_node_adjoint(n, sweep_id):
                 # Seed reduction (lock-free, sweep-isolated): fill this node's private read-buffer for each of its outputs with the total incoming adjoint (canonical seed + sum of all consumer contribution buffers)
                 for out_state in n.outputs.values():
@@ -536,10 +546,23 @@ class System:
                 token_w = _current_writer.set(id(n))
                 try:
                     with n._adjoint_lock:
-                        n._analyze_adjoint()
+                        if track:
+                            _adj_start = time.perf_counter()
+                            n._analyze_adjoint()
+                            n.adjoint_analyzed = True
+                            _adj_elapsed = time.perf_counter() - _adj_start
+                        else:
+                            n._analyze_adjoint()
+                            n.adjoint_analyzed = True
                 finally:
                     _current_writer.reset(token_w)
                     _current_sweep.reset(token_s)
+
+                # Accumulate the per-node and summed adjoint CPU time (thread-safe)
+                if track:
+                    with _adjoint_time_lock:
+                        n.adjoint_time += _adj_elapsed
+                        self.dag_adjoint_time += _adj_elapsed
 
             # Setup the scheduler, which is responsible for scheduling all adjoint analyses (in parallel over each quantity of interest, and parralel within a given sweep)
             with ThreadPoolExecutor(max_workers=self.parallel_max_workers) as pool:
@@ -597,9 +620,9 @@ class System:
                     sweep_id=sweep_id
                 )
 
-            # Per-node adjoint CPU time is not tracked in the parallel path yet;
-            # only the wall-clock time is reported for this pass.
-            self.dag_adjoint_time = float("nan")
+            # Per-node adjoint CPU time is accumulated in perform_node_adjoint when
+            # track_node_timing is enabled (self.dag_adjoint_time). When tracking is
+            # disabled, leave it as the NaN sentinel set at the top of this method.
 
         # Record the wall-clock time for the adjoint pass
         self.dag_adjoint_wall = time.perf_counter() - wall_start
@@ -1318,6 +1341,13 @@ class System:
         iter_number : int
             Current iteration number
         """
+        import time
+
+        # Record the wall-clock start time on the first profiled iteration. This marks
+        # the beginning of the optimization run and is used by finalize_profile_log()
+        # to report the total elapsed run time at the end of profile.log.
+        if not hasattr(self, "_profile_start_time"):
+            self._profile_start_time = time.perf_counter()
 
         # Gather the System-level timing metrics captured by execute()/execute_adjoint().
         # Missing attributes (e.g. a pass that has not run yet) are reported as NaN.
@@ -1374,9 +1404,9 @@ class System:
             end="",
         )
 
-        # Optionally log a per-node forward-time breakdown when per-node timing is
-        # tracked. Uses the unique DAG nodes so shared sub-analyses are not double
-        # counted (unlike a per-top-level breakdown).
+        # Optionally log a per-node forward/adjoint-time breakdown when per-node
+        # timing is tracked. Uses the unique DAG nodes so shared sub-analyses are not
+        # double counted (unlike a per-top-level breakdown).
         if getattr(self, "track_node_timing", False) and hasattr(self, "dag_nodes"):
             for n in sorted(
                 self.dag_nodes,
@@ -1384,9 +1414,42 @@ class System:
                 reverse=True,
             ):
                 self.profile_log.log(
-                    "\n    %-28s fwd=%12.6f"
-                    % (n.obj_name, getattr(n, "analysis_time", float("nan"))),
+                    "\n    %-28s fwd=%12.6f  adj=%12.6f"
+                    % (
+                        n.obj_name,
+                        getattr(n, "analysis_time", float("nan")),
+                        getattr(n, "adjoint_time", float("nan")),
+                    ),
                     end="",
                 )
+
+        return
+
+    def finalize_profile_log(self):
+        """
+        Writes a final summary line to profile.log recording the total wall-clock run
+        time for the entire optimization. The run start is captured lazily on the first
+        call to profile_iteration(), so this should be called once after the
+        optimization loop completes.
+
+        If profile_iteration() was never called (e.g. no iterations ran), the total
+        run time is reported as NaN.
+        """
+        import time
+
+        # Compute the total elapsed run time since the first profiled iteration
+        if hasattr(self, "_profile_start_time"):
+            total_run_time = time.perf_counter() - self._profile_start_time
+        else:
+            total_run_time = float("nan")
+
+        # Store the value as an attribute for programmatic access
+        self.total_run_time = total_run_time
+
+        # Append the summary line to the end of the profile log
+        self.profile_log.log(
+            "\n# total optimization run time: %.6f s" % total_run_time,
+            end="",
+        )
 
         return

@@ -1196,9 +1196,6 @@ class Analysis:
             print(test_case)
             print("-" * len(test_case))
 
-            print(ans_tot, cs, err)
-            print(type(ans_tot))
-
             if method == "cs":
                 print("\n %25s  %25s  %25s" % ("Answer", "Complex-step", "Rel Error"))
                 print("%25.15e  %25.15e  %25.15e" % (ans_tot, cs, err))
