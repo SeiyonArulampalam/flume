@@ -122,8 +122,8 @@ class FlumePyOptSparseInterface:
         # Set the variable values for the various analyses
         self._set_system_variables(xdict)
 
-        # Perform the analysis for the objective function
-        self.flume_sys.obj_analysis.analyze(debug_print=False)
+        # Execute the required analyses for the System (performs analyses for objective and constraint Analysis objects, and then scaling/assignment happens below)
+        self.flume_sys.execute()
 
         # Extract the objective function output
         self.obj_name = self.flume_sys.obj_local_name
@@ -135,8 +135,6 @@ class FlumePyOptSparseInterface:
 
         # Evaluate the constraint functions
         for con in self.flume_sys.con_info:
-            # Perform the analysis for the current constraint function
-            self.flume_sys.con_info[con]["instance"].analyze(debug_print=False)
 
             # Extract the output for the constraint
             con_name = self.flume_sys.con_info[con]["local_name"]
@@ -183,77 +181,38 @@ class FlumePyOptSparseInterface:
         # Initialize the dictionary that will store the gradient information
         grad_vals = {}
 
-        # Compute the gradient of the objective function, where the seed value is set to 1.0 for the output of interest
-        self.flume_sys.obj_analysis._add_output_seed(outputs=[self.obj_name], seed=1.0)
+        # Execute the adjoint procedure for the System
+        self.flume_sys.execute_adjoint(debug_print=False)
+        design_derivs = self.flume_sys.design_derivs
 
-        self.flume_sys.obj_analysis.analyze_adjoint(debug_print=False)
+        # --- Objective: a single scalar sweep (global_obj_name, 0) ---
+        # Extract the name and sweep ID of the objective
+        obj_local = self.flume_sys.obj_local_name
+        obj_sweep_id = (self.flume_sys.global_obj_name, 0)
 
-        # Extract the derivative of the objective wrt the design variables
-        obj_name = self.flume_sys.obj_local_name
-        grad_vals[obj_name] = {}
-        for var in self.flume_sys.design_vars_info:
-            # Extract the local name of the variable
-            local_name = self.flume_sys.design_vars_info[var]["local_name"]
-
-            # Extract the derivative for the current design variable
-            gradx_i = (
-                self.flume_sys.design_vars_info[var]["instance"]
-                .variables[local_name]
-                .deriv
+        grad_vals[obj_local] = {}
+        # Loop through the design variables, extract, and assign the derivative information
+        for var in design_derivs[obj_sweep_id]:
+            grad_vals[obj_local][var] = (
+                design_derivs[obj_sweep_id][var] * self.flume_sys.obj_scale
             )
 
-            # Store the gradient info in the dictionary
-            grad_vals[obj_name][var] = gradx_i * self.flume_sys.obj_scale
-
-        # Loop through the constraints in the System
+        # --- Constraints: assemble each Jacobian by its size, indexing components ---
+        # Loop through each constraint in the system
         for con in self.flume_sys.con_info:
-            # Extract the local name of the constraint
-            con_name = self.flume_sys.con_info[con]["local_name"]
-
-            grad_vals[con_name] = {}
-
-            # Extract the size of the constraint
+            # Get the local constraint name and the size of the constraint vector
+            local_name = self.flume_sys.con_info[con]["local_name"]
             con_size = self.flume_sys.con_info[con]["size"]
 
-            # Extract the RHS for the constraint
-            rhs = self.flume_sys.con_info[con]["rhs"]
-
-            # Loop through by the size of the constraint (each entry in the array is effectively a separate constraint) and evaluate the derivatives
-            for i in range(con_size):
-                # Set the seed for the current constraint
-                if con_size == 1:
-                    seed = 1.0
-                else:
-                    seed = np.zeros(con_size)
-                    seed[i] = 1.0
-
-                # Add the output seed
-                self.flume_sys.con_info[con]["instance"]._add_output_seed(
-                    outputs=[con_name], seed=seed
-                )
-
-                # Perform the adjoint analysis
-                self.flume_sys.con_info[con]["instance"].analyze_adjoint(
-                    debug_print=False
-                )
-
-                # Loop through the variables in the system
-                for var in self.flume_sys.design_vars_info:
-                    # Extract the derivative value for the current constraint and variable combination
-                    local_var_name = self.flume_sys.design_vars_info[var]["local_name"]
-
-                    gradc_i = (
-                        self.flume_sys.design_vars_info[var]["instance"]
-                        .variables[local_var_name]
-                        .deriv
-                    )
-
-                    # Assign the gradient value into the grad_vals dictionary
-                    if i > 0:
-                        current = grad_vals[con_name][var]
-                        grad_vals[con_name][var] = np.vstack((current, gradc_i))
-                    else:
-                        grad_vals[con_name][var] = gradc_i
+            grad_vals[local_name] = {}
+            # Loop through the design variables
+            for var in self.flume_sys.design_vars_info:
+                # Get the portion of the constraint Jacobian for the current constraint
+                rows = [
+                    np.atleast_1d(np.asarray(design_derivs[(con, i)][var], dtype=float))
+                    for i in range(con_size)
+                ]
+                grad_vals[local_name][var] = np.vstack(rows)  # shape (con_size, n_vars)
 
         # Add the profiling information for the current iteration
         self.flume_sys.profile_iteration(self.it_counter - 1)

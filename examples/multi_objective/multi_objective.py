@@ -435,22 +435,62 @@ if __name__ == "__main__":
 
         constraint.test_combined_adjoint(method="fd")
 
-    # Create the flume system
-    sys = System(
+    serial_sys = System(
         sys_name="multiobj_test",
         top_level_analysis_list=[multi, constraint],
-        log_prefix="examples/multi_objective",
+        # log_prefix="examples/multi_objective",
+        parallel_execution=False,
     )
 
-    # Graph the system
-    graph = sys.graph_network()
-    graph.render("MultiObjective_SystemGraph", directory=sys.log_prefix, cleanup=True)
+    # # Graph the system
+    # graph = serial_sys.graph_network()
+    # graph.render(
+    #     "MultiObjective_SystemGraph", directory=serial_sys.log_prefix, cleanup=True
+    # )
 
     # Declare the objective and constraints
-    sys.declare_design_vars(global_var_name={"first.x": {"lb": -2.0, "ub": 2.0}})
+    serial_sys.declare_design_vars(global_var_name={"first.x": {"lb": -2.0, "ub": 2.0}})
 
-    sys.declare_objective(global_obj_name="multi.J")
+    serial_sys.declare_objective(global_obj_name="multi.J")
 
-    sys.declare_constraints(
+    serial_sys.declare_constraints(
         global_con_name={"con.c": {"rhs": 10.0, "direction": "leq"}}
     )
+
+    serial_sys.execute(debug_print=False)
+    obj = multi.outputs["J"].value
+    con = constraint.outputs["c"].value
+
+    print("\nOutputs for serial execution:")
+    print(f"\tobj = {obj:.6f}")
+    print(f"\tcon = {con:.6f}")
+    print(f"\texecution time (wall) = {serial_sys.dag_forward_wall:.8f} seconds")
+
+    # Create the flume system
+    parallel_sys = System(
+        sys_name="multiobj_test",
+        top_level_analysis_list=[multi, constraint],
+        # log_prefix="examples/multi_objective",
+        parallel_execution=True,
+    )
+
+    # Declare the objective and constraints
+    parallel_sys.declare_design_vars(
+        global_var_name={"first.x": {"lb": -2.0, "ub": 2.0}}
+    )
+
+    parallel_sys.declare_objective(global_obj_name="multi.J")
+
+    parallel_sys.declare_constraints(
+        global_con_name={"con.c": {"rhs": 10.0, "direction": "leq"}}
+    )
+
+    parallel_sys.execute(debug_print=False)
+
+    print("\nOutputs for parallel execution:")
+    print(f"\tobj = {obj:.6f}")
+    print(f"\tcon = {con:.6f}")
+    print(f"\texecution time (wall) = {parallel_sys.dag_forward_wall:.8f} seconds")
+
+    speedup = serial_sys.dag_forward_wall / parallel_sys.dag_forward_wall
+    print(f"speedup = {speedup:.6f}")
