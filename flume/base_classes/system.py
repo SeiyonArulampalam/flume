@@ -33,9 +33,14 @@ class System:
             A list of instances of Analysis objects that will be utilized within the optimization problem. Here, the objects that should be provided are the analyses that define the objective function and any constraint functions so that these can be declared for the optimization formulation. Other Analysis classes, such as those used as sub-analyses, do not need to be provided here, as they should be provided when creating the objects in the top-level analysis list
         log_name : str
             String that defines the name to use for the log file, defaults to 'flume.log'
-        log_prefix: str
+        log_prefix : str
             String that defines the output directory where the log file and other files are saved, defaults to the current directory '.'
-        TODO: parallel exeuction
+        parallel_execution : bool
+            Boolean operator that specifies whether the DAG should be executed in parallel for the forward and adjoint analyses. Defaults to False.
+        parallel_max_workers : int
+            Only applied when `parallel_execution` is True. Spawns this many threads for performing the forward/adjoint analyses in parallel.
+        track_node_timing : bool
+            Boolean value that specifies whether the `profile.log` file should track the execution time for the forward and adjoint analyses for each node in the DAG.
         """
 
         # Store the name for the system
