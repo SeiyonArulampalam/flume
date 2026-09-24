@@ -896,13 +896,16 @@ class System:
                     self.nodes.append(sub)
 
                     if sub in self.top_level_analysis_list:
-                        out_str = ", ".join(sub.outputs.keys())
+                        # Output names removed from the consolidated view: show
+                        # only the component name in top-level nodes.
+                        # out_str = ", ".join(sub.outputs.keys())
                         top_attrs = {}
                         if _top_fill is not None:
                             top_attrs["style"] = "rounded,filled"
                             top_attrs["fillcolor"] = _top_fill
                             top_attrs["color"] = _border_color(_top_fill)
-                        label = f"<<B>{sub.obj_name}</B><BR/><I>Outputs: {out_str}</I>>"
+                        # label = f"<<B>{sub.obj_name}</B><BR/><I>Outputs: {out_str}</I>>"
+                        label = f"<<B>{sub.obj_name}</B>>"
                         graph.node(
                             sub.obj_name,
                             label,
@@ -923,8 +926,11 @@ class System:
                     if edge_key in self.edges:
                         continue
                     self.edges[edge_key] = labels
-                    tooltip = ", ".join(labels)
-                    graph.edge(*edge_key, tooltip=tooltip, labeltooltip=tooltip)
+                    # Variable-name tooltips disabled for the consolidated view:
+                    # keep only the component name and the connecting arrow.
+                    # tooltip = ", ".join(labels)
+                    # graph.edge(*edge_key, tooltip=tooltip, labeltooltip=tooltip)
+                    graph.edge(*edge_key)
 
         return graph
 
