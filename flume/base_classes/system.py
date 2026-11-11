@@ -641,6 +641,7 @@ class System:
         interactive: bool = False,
         format: str = "pdf",
         consolidated_graph: bool = False,
+        edge_penwidth: float = 1.0,
     ):
         """
         Construct the visualization of the network associated with the Flume system using graphviz.
@@ -653,12 +654,14 @@ class System:
             String that defines the directory where the file should be saved
         interactive : bool
             Boolean value that indicates whether the graph should be output in interactive mode. *This is an experimental feature at the moment*
+        edge_penwidth : float
+            Line thickness used for all edges (connections) in the graph. Larger values produce thicker lines. Defaults to 1.0.
         """
 
         # Create the graph, according to the interactive boolean argument
         if interactive:
             # Make the graph with graphviz in interactive mode
-            graph = self._static_graph_network()
+            graph = self._static_graph_network(edge_penwidth=edge_penwidth)
 
             # Render as an svg for interactive graph
             int_filename = filename + "_interactive"
@@ -688,6 +691,7 @@ class System:
                 top_level_fillcolor="#5FB7EA",
                 opacity=0.5,
                 penwidth=3,
+                edge_penwidth=edge_penwidth,
             )
 
             # Render the graph
@@ -700,7 +704,7 @@ class System:
 
         else:
             # Make the graph with graphviz
-            graph = self._static_graph_network()
+            graph = self._static_graph_network(edge_penwidth=edge_penwidth)
 
             # Render the graph
             graph.render(
@@ -712,9 +716,14 @@ class System:
 
         return graph
 
-    def _static_graph_network(self):
+    def _static_graph_network(self, edge_penwidth: float = 1.0):
         """
         Private method that is used to greate the graphviz visual in static form, which is ultimately returned by this method.
+
+        Parameters
+        ----------
+        edge_penwidth : float
+            Line thickness applied to all edges in the graph. Defaults to 1.0.
         """
 
         # graph = nx.Graph()
@@ -722,6 +731,7 @@ class System:
             name=f"{self.sys_name.upper()}",
             graph_attr={"rankdir": "LR", "ranksep": "0.7"},
             node_attr={"shape": "box", "fontname": "Helvetica"},
+            edge_attr={"penwidth": str(edge_penwidth)},
         )
 
         # Initialize an empty list to store the systems added to the graph as nodes
@@ -755,14 +765,15 @@ class System:
                         out_labels = list(sub.outputs.keys())
                         out_str = ", ".join(out_labels)
 
-                        # Add the node
+                        # Add the node (obj_name is the unique node ID,
+                        # dag_name is the displayed label)
                         graph.node(
                             sub.obj_name,
-                            f"{sub.obj_name}\nOutputs: {out_str}",
+                            f"{sub.dag_name}\nOutputs: {out_str}",
                             color="red",
                         )
                     else:
-                        graph.node(sub.obj_name, f"{sub.obj_name}")
+                        graph.node(sub.obj_name, f"{sub.dag_name}")
                 else:
                     pass
 
@@ -807,6 +818,7 @@ class System:
         top_level_fillcolor: str = None,
         opacity: float = 1.0,
         penwidth: float = 2.0,
+        edge_penwidth: float = 1.0,
     ):
         """
         Private method that builds a decluttered version of the static graphviz visual.
@@ -832,6 +844,11 @@ class System:
             Fill opacity from 0.0 (transparent) to 1.0 (fully opaque). Applied
             to both ``node_fillcolor`` and ``top_level_fillcolor`` by appending
             an alpha byte to the hex color. Defaults to 1.0.
+        penwidth : float, optional
+            Border line thickness for nodes. Defaults to 2.0.
+        edge_penwidth : float, optional
+            Line thickness applied to all edges (connections) in the graph.
+            Defaults to 1.0.
 
         Returns
         -------
@@ -871,8 +888,19 @@ class System:
 
         graph = gv.Digraph(
             name=f"{self.sys_name.upper()}",
-            graph_attr={"rankdir": "LR", "ranksep": "0.7", "concentrate": "true"},
+            # "concentrate" merges multiedges and shares partially-parallel
+            # edge paths (arrows merge). On its own it can leave a small gap/
+            # stub at the node where the merged path splits back apart. Setting
+            # "splines=true" routes the merged splines smoothly into the node
+            # boundary, which closes that gap while keeping the merging.
+            graph_attr={
+                "rankdir": "LR",
+                "ranksep": "0.7",
+                "concentrate": "true",
+                "splines": "true",
+            },
             node_attr=base_node_attrs,
+            edge_attr={"penwidth": str(edge_penwidth)},
         )
 
         self.nodes = []
@@ -904,15 +932,15 @@ class System:
                             top_attrs["style"] = "rounded,filled"
                             top_attrs["fillcolor"] = _top_fill
                             top_attrs["color"] = _border_color(_top_fill)
-                        # label = f"<<B>{sub.obj_name}</B><BR/><I>Outputs: {out_str}</I>>"
-                        label = f"<<B>{sub.obj_name}</B>>"
+                        # label = f"<<B>{sub.dag_name}</B><BR/><I>Outputs: {out_str}</I>>"
+                        label = f"<<B>{sub.dag_name}</B>>"
                         graph.node(
                             sub.obj_name,
                             label,
                             **top_attrs,
                         )
                     else:
-                        graph.node(sub.obj_name, f"{sub.obj_name}")
+                        graph.node(sub.obj_name, f"{sub.dag_name}")
 
                 if i == 0 or not hasattr(sub, "connects"):
                     continue

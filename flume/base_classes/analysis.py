@@ -18,7 +18,9 @@ class Analysis:
     This is a base class for all derived analysis classes that establishes a set of common methods. For the variables and outputs that are stored as attributes of the class, data is stored in dictionaries with key-value pairs structured as "variable/output name" : State object that describes the variable/output.
     """
 
-    def __init__(self, obj_name: str, sub_analyses: list = [], **kwargs):
+    def __init__(
+        self, obj_name: str, sub_analyses: list = [], dag_name: str = None, **kwargs
+    ):
         """
         Base class construction for an instance of an Analysis object within the Flume framework.
 
@@ -28,6 +30,8 @@ class Analysis:
             Name for the analysis object, which should be unique among all Analysis objects that are included for a System
         sub_analyses : list
             A list of sub-analyses for the object, which will either be empty or contain other instances of objects that inherit from the Analysis base class
+        dag_name : str, optional
+            Display name used for this object's node when constructing the graph network visualization. If not provided, the ``obj_name`` is used instead.
 
         Keyword Arguments
         -----------------
@@ -36,6 +40,10 @@ class Analysis:
 
         # Store the name for the property object
         self.obj_name = obj_name
+
+        # Store the display name used for the graph network visualization. Falls
+        # back to the obj_name if a dag_name is not explicitly provided.
+        self.dag_name = dag_name if dag_name is not None else obj_name
 
         # Store the list of sub-analyses for the object
         self.sub_analyses = sub_analyses
@@ -1040,7 +1048,8 @@ class Analysis:
         perts = {}
         for var in deriv_vals:
 
-            perts["pert_" + var] = np.random.uniform(size=np.size(deriv_vals[var]))
+            perts["pert_" + var] = np.ones(shape=np.size(deriv_vals[var]))
+            # perts["pert_" + var] = np.random.uniform(size=np.size(deriv_vals[var]))
 
         # Compute the exact derivatives with the perturbation values
         ans_tot = 0.0
